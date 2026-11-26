@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILDTIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 CONF ?= etc/config.toml
 
-.PHONY: help dev dev-windows frontend-install frontend-build build build-windows test lint fmt-check frontend-check verify clean init-dev
+.PHONY: help dev dev-windows frontend-install frontend-build build build-windows docker-build docker-up docker-down test lint fmt-check frontend-check verify clean init-dev
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  %-18s %s\\n",$$1,$$2}'
@@ -37,6 +37,15 @@ build-windows: frontend-build ## 构建包含前端资源的 Windows 二进制
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags=embed \
 		-ldflags "-s -w -X main.Version=$(VERSION) -X main.BuildTime=$(BUILDTIME)" \
 		-o bin/svnpanel.exe .
+
+docker-build: ## 构建包含 svnserve 的本地镜像
+	docker build --build-arg VERSION=$(VERSION) --build-arg BUILD_TIME=$(BUILDTIME) -t svnpanel:local .
+
+docker-up: ## 使用 Compose 启动容器
+	docker compose up -d --build
+
+docker-down: ## 停止 Compose 容器
+	docker compose down
 
 test: ## 运行后端测试
 	go test ./... -cover

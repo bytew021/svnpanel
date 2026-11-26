@@ -75,6 +75,21 @@ chmod 600 /etc/svnpanel/config.toml /srv/svn/etc/passwd /srv/svn/etc/authz
 
 完整部署步骤见 [docs/部署说明.md](docs/部署说明.md)。
 
+## Docker
+
+镜像同时打包 `svnserve` 和 SVN Panel，可通过 Compose 启动：
+
+```bash
+cp .env.example .env
+# 修改 .env 中的管理员密码
+docker compose up -d --build
+docker compose exec svnpanel svn-repo-init example
+```
+
+面板默认监听 `8080`，SVN 默认监听 `3690`。容器内仓库与认证文件位于 `/srv/svn`，审计与备份位于 `/var/lib/svnpanel`，两者都应挂载持久化卷。完整说明见 [docs/Docker部署.md](docs/Docker部署.md)。
+
+GitHub Actions 会构建、冒烟测试镜像，并在 `main` 分支或 `v*` 标签推送时发布到 GHCR。发布 GitHub Release 时，还会按版本推送 `Docker Hub`，正式版本同步更新 `latest`。
+
 ## 重要约束
 
 - `passwd` 和 `authz` 是唯一权限真源，系统不建立权限数据库。

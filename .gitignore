@@ -1,6 +1,9 @@
 /bin/
 /logs/
 /.idea/
+/.env
+/.env.*
+!/.env.example
 /data/backups/
 /data/backups-smoke/
 /data/repos/*/

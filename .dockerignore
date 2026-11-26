@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.env
+.env.*
+!.env.example
+bin
+data
+frontend/dist
+frontend/node_modules
+logs
+web/dist
+*.exe
+*.log
+*.test
