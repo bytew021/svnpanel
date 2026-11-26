@@ -1,0 +1,115 @@
+name: Release Binaries
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-binaries-${{ github.event.release.tag_name || github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build release binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tag must be semantic version with v prefix: $RELEASE_TAG"
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.22.0"
+
+      - name: Build embedded frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Build binaries
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          rm -rf web/dist
+          cp -a frontend/dist web/dist
+          mkdir -p dist
+          build_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+          for target in windows/amd64 linux/amd64 linux/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            suffix=""
+            if [[ "$goos" == "windows" ]]; then
+              suffix=".exe"
+            fi
+            output="dist/svnpanel_${RELEASE_TAG}_${goos}_${goarch}${suffix}"
+            echo "Building $output"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -buildvcs=false -tags=embed -trimpath \
+              -ldflags "-s -w -X main.Version=${RELEASE_TAG} -X main.BuildTime=${build_time}" \
+              -o "$output" .
+          done
+
+          "dist/svnpanel_${RELEASE_TAG}_linux_amd64" -version | tee /tmp/svnpanel-version.txt
+          grep -F "svnpanel ${RELEASE_TAG}" /tmp/svnpanel-version.txt
+          (
+            cd dist
+            sha256sum svnpanel_* > checksums.txt
+          )
+          file dist/*
+
+      - name: Store workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: svnpanel-binaries-${{ steps.release.outputs.tag }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Upload assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release view "$RELEASE_TAG" --json assets \
+            --jq '.assets[] | [.name, .size] | @tsv'

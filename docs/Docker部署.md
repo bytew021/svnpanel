@@ -110,6 +110,8 @@ docker run -d \
 
 首次发布后，需要在 GitHub 仓库设置中确认 Packages 权限允许 Actions 使用 `GITHUB_TOKEN` 写入 GHCR。
 
+GitHub Release 还会通过 `.github/workflows/release-binaries.yml` 生成 Windows amd64、Linux amd64 和 Linux arm64 二进制，详细说明见 [发版说明](发版说明.md)。
+
 ### Docker Hub 正式发版
 
 `.github/workflows/release-dockerhub.yml` 在 GitHub Release 发布时执行：

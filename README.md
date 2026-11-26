@@ -90,6 +90,8 @@ docker compose exec svnpanel svn-repo-init example
 
 GitHub Actions 会构建、冒烟测试镜像，并在 `main` 分支或 `v*` 标签推送时发布到 GHCR。发布 GitHub Release 时，还会按版本推送 `Docker Hub`，正式版本同步更新 `latest`。
 
+每个 Release 还会生成并附加以 `svnpanel_<版本>_<系统>_<架构>` 命名的 Windows amd64、Linux amd64、Linux arm64 二进制及 `checksums.txt`。相关说明见 [docs/发版说明.md](docs/发版说明.md)。
+
 ## 重要约束
 
 - `passwd` 和 `authz` 是唯一权限真源，系统不建立权限数据库。
