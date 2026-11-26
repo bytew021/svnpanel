@@ -1,0 +1,24 @@
+[Unit]
+Description=SVN Panel
+After=network.target svnserve.service
+Wants=svnserve.service
+
+[Service]
+Type=simple
+User=svn
+Group=svn
+WorkingDirectory=/opt/svnpanel
+ExecStart=/opt/svnpanel/bin/svnpanel -conf /etc/svnpanel/config.toml
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/svn/etc /srv/svn/repos /var/lib/svnpanel
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

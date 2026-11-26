@@ -1,0 +1,42 @@
+[Global]
+Title = "SVN 权限面板"
+RunMode = "release"
+
+[HTTP]
+Host = "0.0.0.0"
+Port = 8080
+ReadTimeout = 15
+WriteTimeout = 30
+IdleTimeout = 60
+ShutdownTimeout = 15
+MaxContentLength = 1048576
+TrustedProxies = ["127.0.0.1", "::1"]
+
+[Admin]
+# 仅用于开发环境。生产环境请复制 config.production.toml.example 并修改。
+Username = "admin"
+Password = "change-me-before-use"
+
+[SVN]
+RepoRoot = "data/repos"
+PasswdFile = "etc/passwd"
+AuthzFile = "etc/authz"
+SvnlookPath = "svnlook"
+CommandTimeoutSeconds = 5
+MaxCommandOutputMiB = 4
+MaxPathsPerLevel = 2000
+
+[Audit]
+Dir = "logs/audit"
+
+[Backup]
+Dir = "data/backups"
+Keep = 50
+
+[Session]
+IdleMinutes = 30
+AbsoluteHours = 8
+CookieSecure = false
+
+[Metadata]
+Departments = ["部门A", "部门B", "部门C"]

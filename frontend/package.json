@@ -1,0 +1,37 @@
+{
+  "name": "svnpanel-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vue-tsc --noEmit && vp build",
+    "typecheck": "vue-tsc --noEmit",
+    "preview": "vp preview"
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "pinia": "^3.0.1",
+    "sweetalert2": "^11.17.2",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
+    "vxe-pc-ui": "^4.7.12",
+    "vxe-table": "^4.10.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.4",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "tailwindcss": "^4.1.4",
+    "typescript": "~5.7.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vue-tsc": "^2.2.8"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.22.0",
+      "onFail": "download"
+    }
+  }
+}

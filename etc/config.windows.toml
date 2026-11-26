@@ -1,0 +1,46 @@
+[Global]
+Title = "SVN 权限面板（Windows 开发）"
+RunMode = "debug"
+
+[HTTP]
+Host = "127.0.0.1"
+Port = 8080
+ReadTimeout = 15
+WriteTimeout = 30
+IdleTimeout = 60
+ShutdownTimeout = 15
+MaxContentLength = 1048576
+TrustedProxies = ["127.0.0.1", "::1"]
+
+[Admin]
+Username = "admin"
+Password = "change-me-before-use"
+
+[SVN]
+RepoRoot = "data/repos"
+PasswdFile = "data/conf/passwd"
+AuthzFile = "data/conf/authz"
+SvnlookPath = "svnlook"
+CommandTimeoutSeconds = 5
+MaxCommandOutputMiB = 4
+MaxPathsPerLevel = 2000
+
+[Audit]
+Dir = "logs/audit"
+
+[Backup]
+Dir = "data/backups"
+Keep = 50
+
+[Session]
+IdleMinutes = 30
+AbsoluteHours = 8
+CookieSecure = false
+
+[Metadata]
+Departments = ["部门A", "部门B", "部门C"]
+
+# 如果希望复用 Linux 配置，可取消下面注释并把路径改成 Windows 实际位置：
+# [PathMap]
+# "/data/svn" = "D:/data/svn"
+# "/var/lib/svnpanel" = "D:/svnpanel-data"

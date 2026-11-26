@@ -1,0 +1,42 @@
+[Global]
+Title = "SVN 权限面板"
+RunMode = "release"
+
+[HTTP]
+Host = "127.0.0.1"
+Port = 8080
+ReadTimeout = 15
+WriteTimeout = 30
+IdleTimeout = 60
+ShutdownTimeout = 15
+MaxContentLength = 1048576
+TrustedProxies = ["127.0.0.1", "::1"]
+
+[Admin]
+Username = "admin"
+# 明文密码是既定取舍；必须保持配置文件 0600 且只能由服务账号读取。
+Password = "replace-with-a-long-random-password"
+
+[SVN]
+RepoRoot = "/srv/svn/repos"
+PasswdFile = "/srv/svn/etc/passwd"
+AuthzFile = "/srv/svn/etc/authz"
+SvnlookPath = "/usr/bin/svnlook"
+CommandTimeoutSeconds = 5
+MaxCommandOutputMiB = 4
+MaxPathsPerLevel = 2000
+
+[Audit]
+Dir = "/var/lib/svnpanel/audit"
+
+[Backup]
+Dir = "/var/lib/svnpanel/backups"
+Keep = 50
+
+[Session]
+IdleMinutes = 30
+AbsoluteHours = 8
+CookieSecure = true
+
+[Metadata]
+Departments = ["部门A", "部门B", "部门C"]

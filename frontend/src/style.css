@@ -1,0 +1,249 @@
+@import "tailwindcss";
+
+:root {
+  color: #172033;
+  background: #f3f6fa;
+  font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 768px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 90% 0%, rgb(219 234 254 / 65%), transparent 28rem),
+    #f3f6fa;
+}
+
+@media (max-width: 1200px) {
+  .app-sidebar {
+    width: 4.5rem !important;
+  }
+
+  .sidebar-brand-text,
+  .sidebar-user,
+  .sidebar-item-label {
+    display: none !important;
+  }
+
+  .sidebar-short {
+    display: inline !important;
+  }
+
+  .sidebar-dot {
+    display: none !important;
+  }
+
+  .sidebar-logout-full {
+    display: none !important;
+  }
+
+  .sidebar-logout-short {
+    display: inline !important;
+  }
+
+  .app-sidebar a {
+    justify-content: center;
+  }
+
+  .app-sidebar .sidebar-footer {
+    padding: 0.5rem;
+  }
+
+  .app-main-header,
+  .app-content {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+.sidebar-short,
+.sidebar-logout-short {
+  display: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.6rem;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+}
+
+.input {
+  width: 100%;
+  border: 1px solid #d7dde7;
+  border-radius: 0.45rem;
+  background: #fff;
+  padding: 0.55rem 0.7rem;
+  color: #172033;
+  outline: none;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.input:focus {
+  border-color: #2f6fed;
+  box-shadow: 0 0 0 3px rgb(47 111 237 / 12%);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  padding: 0.52rem 0.82rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: transform 100ms, opacity 100ms, background 100ms;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-primary {
+  background: #245fd8;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #1e51ba;
+}
+
+.btn-secondary {
+  border-color: #d7dde7;
+  background: #fff;
+  color: #344054;
+}
+
+.btn-danger {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #526174;
+}
+
+.muted {
+  color: #667085;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-green {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.badge-gray {
+  background: #f2f4f7;
+  color: #475467;
+}
+
+.badge-amber {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.modal-mask {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(15 23 42 / 45%);
+  backdrop-filter: blur(2px);
+}
+
+.modal-panel {
+  width: min(34rem, calc(100vw - 3rem));
+  max-height: calc(100vh - 4rem);
+  overflow: auto;
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 30px 80px rgb(15 23 42 / 28%);
+}
+
+.empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: #98a2b3;
+}
+
+.swal2-popup {
+  font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif !important;
+}
+
+.swal-confirm-popup {
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 15%);
+}
+
+.swal-confirm-title {
+  margin: 0 0 12px;
+  color: #2d3748;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.swal-confirm-divider {
+  margin: 0 0 14px;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.swal-confirm-actions {
+  gap: 10px;
+}
+
+.swal-alert-footer {
+  padding-bottom: 4px;
+  text-align: center;
+}
+
+.swal-alert-close-button {
+  min-width: 88px;
+  padding: 7px 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+  color: #2d3748;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.swal-alert-close-button:hover {
+  background: #f5f7fa;
+}

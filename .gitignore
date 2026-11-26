@@ -1,0 +1,14 @@
+/bin/
+/logs/
+/.idea/
+/data/backups/
+/data/backups-smoke/
+/data/repos/*/
+/data/conf/
+/frontend/dist/
+/frontend/node_modules/
+/web/dist/
+*.exe
+*.test
+*.log
+.DS_Store

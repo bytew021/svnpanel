@@ -1,0 +1,322 @@
+package center_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"svnpanel/internal/app/center"
+	"svnpanel/internal/cfg"
+	"svnpanel/internal/service"
+	"svnpanel/internal/svncfg"
+	"svnpanel/pkg/httpx"
+
+	"github.com/gin-gonic/gin"
+)
+
+type testAPI struct {
+	t       *testing.T
+	handler http.Handler
+	cookie  *http.Cookie
+	csrf    string
+	revs    svncfg.Revisions
+}
+
+func TestUserGroupACLFlow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	passwdPath := filepath.Join(dir, "passwd")
+	authzPath := filepath.Join(dir, "authz")
+	repoRoot := filepath.Join(dir, "repos")
+	if err := os.MkdirAll(repoRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(passwdPath, []byte("# users\nalice = old-password\n#disabled#bob = disabled-password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(authzPath, []byte("# acl\n[groups]\nqa = bob\n\n[demo:/trunk]\nqa = r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := &cfg.Config{
+		Global: cfg.GlobalConfig{Title: "test", RunMode: "release"},
+		HTTP:   cfg.HTTPConfig{Host: "127.0.0.1", Port: 8080, MaxContentLength: 1 << 20},
+		Admin:  cfg.AdminConfig{Username: "admin", Password: "admin-pass"},
+		SVN: cfg.SVNConfig{
+			RepoRoot: repoRoot, PasswdFile: passwdPath, AuthzFile: authzPath,
+			SvnlookPath: "svnlook", CommandTimeoutSec: 2, MaxCommandOutputMiB: 1, MaxPathsPerLevel: 100,
+		},
+		Audit:    cfg.AuditConfig{Dir: filepath.Join(dir, "audit")},
+		Backup:   cfg.BackupConfig{Dir: filepath.Join(dir, "backups"), Keep: 50},
+		Session:  cfg.SessionConfig{IdleMinutes: 30, AbsoluteHours: 8, CookieSecure: false},
+		Metadata: cfg.MetadataConfig{Departments: []string{"部门A", "部门B"}},
+	}
+	svc := service.New(config)
+	if err := svc.Manager.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	engine := httpx.NewEngine(*config)
+	center.Config(engine, svc)
+	api := &testAPI{t: t, handler: engine}
+
+	sessionResponse := api.do(http.MethodGet, "/api/v1/auth/session", nil, false, false)
+	if sessionResponse.Code != http.StatusOK {
+		t.Fatalf("session probe failed: %d %s", sessionResponse.Code, sessionResponse.Body.String())
+	}
+
+	login := api.do(http.MethodPost, "/api/v1/auth/login", map[string]any{
+		"username": "admin", "password": "admin-pass",
+	}, false, false)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login failed: %d %s", login.Code, login.Body.String())
+	}
+	for _, cookie := range login.Result().Cookies() {
+		if cookie.Name == "svnpanel_session" {
+			api.cookie = cookie
+		}
+	}
+	if api.cookie == nil {
+		t.Fatal("session cookie missing")
+	}
+	var loginData struct {
+		Data struct {
+			CSRF string `json:"csrf"`
+		} `json:"data"`
+	}
+	decode(t, login, &loginData)
+	api.csrf = loginData.Data.CSRF
+
+	repositories := api.do(http.MethodGet, "/api/v1/repositories", nil, true, false)
+	var repositoryData struct {
+		Data struct {
+			Items []any `json:"items"`
+		} `json:"data"`
+	}
+	decode(t, repositories, &repositoryData)
+	if repositoryData.Data.Items == nil {
+		t.Fatal("empty repository list must be encoded as []")
+	}
+
+	usersResp := api.do(http.MethodGet, "/api/v1/users", nil, true, false)
+	var users struct {
+		Data struct {
+			Items []struct {
+				Name string `json:"name"`
+			} `json:"items"`
+			Revisions svncfg.Revisions `json:"revisions"`
+		} `json:"data"`
+	}
+	decode(t, usersResp, &users)
+	api.revs = users.Data.Revisions
+	if len(users.Data.Items) != 2 {
+		t.Fatalf("unexpected users: %+v", users.Data.Items)
+	}
+
+	created := api.do(http.MethodPost, "/api/v1/users", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"name": "carol", "password": "carol-password", "remark": "示例成员", "department": "部门A",
+	}, true, true)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create user failed: %d %s", created.Code, created.Body.String())
+	}
+	api.readRevisions(created, true)
+
+	metadataUpdated := api.do(http.MethodPut, "/api/v1/users/carol/metadata", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"remark": "更新后的示例成员", "department": "部门B",
+	}, true, true)
+	if metadataUpdated.Code != http.StatusOK {
+		t.Fatalf("update metadata failed: %d %s", metadataUpdated.Code, metadataUpdated.Body.String())
+	}
+	api.readRevisions(metadataUpdated, false)
+
+	batch := api.do(http.MethodPost, "/api/v1/users/batch", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"names": []string{"alice", "carol"}, "action": "set_department", "department": "部门B",
+	}, true, true)
+	if batch.Code != http.StatusOK {
+		t.Fatalf("batch update failed: %d %s", batch.Code, batch.Body.String())
+	}
+	api.readRevisions(batch, false)
+
+	missingCSRF := api.do(http.MethodPost, "/api/v1/groups", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"name": "release", "members": []string{"carol"},
+	}, true, false)
+	if missingCSRF.Code != http.StatusForbidden {
+		t.Fatalf("expected csrf failure, got %d", missingCSRF.Code)
+	}
+
+	group := api.do(http.MethodPost, "/api/v1/groups", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"name": "release", "remark": "发布验证组", "members": []string{"carol"},
+	}, true, true)
+	if group.Code != http.StatusCreated {
+		t.Fatalf("create group failed: %d %s", group.Code, group.Body.String())
+	}
+	api.readRevisions(group, true)
+
+	groupUpdated := api.do(http.MethodPut, "/api/v1/groups/release/members", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"members": []string{"carol"}, "remark": "更新后的验证组",
+	}, true, true)
+	if groupUpdated.Code != http.StatusOK {
+		t.Fatalf("update group failed: %d %s", groupUpdated.Code, groupUpdated.Body.String())
+	}
+	api.readRevisions(groupUpdated, false)
+
+	acl := api.do(http.MethodPost, "/api/v1/repositories/demo/acl", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"path": "/trunk", "kind": "group", "name": "release", "permission": "write",
+	}, true, true)
+	if acl.Code != http.StatusOK {
+		t.Fatalf("set acl failed: %d %s", acl.Code, acl.Body.String())
+	}
+	api.readRevisions(acl, true)
+
+	effective := api.do(http.MethodGet, "/api/v1/repositories/demo/acl?path=%2Ftrunk&user=carol", nil, true, false)
+	var aclResp struct {
+		Data struct {
+			Effective svncfg.EffectiveAccess `json:"effective"`
+		} `json:"data"`
+	}
+	decode(t, effective, &aclResp)
+	if aclResp.Data.Effective.Permission != svncfg.PermissionWrite {
+		t.Fatalf("unexpected effective permission: %+v", aclResp.Data.Effective)
+	}
+
+	groupPermissions := api.do(http.MethodPut, "/api/v1/groups/release/permissions", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"permissions": []map[string]any{
+			{"repo": "demo", "path": "/trunk", "permission": "read"},
+		},
+	}, true, true)
+	if groupPermissions.Code != http.StatusOK {
+		t.Fatalf("update group permissions failed: %d %s", groupPermissions.Code, groupPermissions.Body.String())
+	}
+	api.readRevisions(groupPermissions, false)
+
+	effectiveAfter := api.do(http.MethodGet, "/api/v1/repositories/demo/acl?path=%2Ftrunk&user=carol", nil, true, false)
+	var aclAfter struct {
+		Data struct {
+			Effective svncfg.EffectiveAccess `json:"effective"`
+		} `json:"data"`
+	}
+	decode(t, effectiveAfter, &aclAfter)
+	if aclAfter.Data.Effective.Permission != svncfg.PermissionRead {
+		t.Fatalf("unexpected permission after group update: %+v", aclAfter.Data.Effective)
+	}
+
+	deleteBlocked := api.do(http.MethodDelete, "/api/v1/users/carol", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+	}, true, true)
+	if deleteBlocked.Code != http.StatusConflict {
+		t.Fatalf("expected referenced user conflict, got %d %s", deleteBlocked.Code, deleteBlocked.Body.String())
+	}
+
+	reveal := api.do(http.MethodPost, "/api/v1/users/alice/reveal", map[string]any{}, true, true)
+	if reveal.Code != http.StatusOK {
+		t.Fatalf("reveal failed: %d %s", reveal.Code, reveal.Body.String())
+	}
+	var revealData struct {
+		Data struct {
+			Value string `json:"value"`
+		} `json:"data"`
+	}
+	decode(t, reveal, &revealData)
+	if revealData.Data.Value != "old-password" {
+		t.Fatalf("unexpected revealed value %q", revealData.Data.Value)
+	}
+
+	removeACL := api.do(http.MethodDelete, "/api/v1/repositories/demo/acl", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"path": "/trunk", "kind": "group", "name": "release",
+	}, true, true)
+	if removeACL.Code != http.StatusOK {
+		t.Fatalf("remove acl failed: %d %s", removeACL.Code, removeACL.Body.String())
+	}
+	api.readRevisions(removeACL, false)
+
+	removeGroup := api.do(http.MethodDelete, "/api/v1/groups/release", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+	}, true, true)
+	if removeGroup.Code != http.StatusOK {
+		t.Fatalf("remove group failed: %d %s", removeGroup.Code, removeGroup.Body.String())
+	}
+	api.readRevisions(removeGroup, false)
+
+	removeUser := api.do(http.MethodDelete, "/api/v1/users/carol", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+	}, true, true)
+	if removeUser.Code != http.StatusOK {
+		t.Fatalf("remove user failed: %d %s", removeUser.Code, removeUser.Body.String())
+	}
+	api.readRevisions(removeUser, false)
+
+	audits := api.do(http.MethodGet, "/api/v1/audits?pageSize=100", nil, true, false)
+	if audits.Code != http.StatusOK {
+		t.Fatalf("audit query failed: %d %s", audits.Code, audits.Body.String())
+	}
+	if bytes.Contains(audits.Body.Bytes(), []byte("old-password")) {
+		t.Fatal("audit response leaked password")
+	}
+
+	passwd, err := os.ReadFile(passwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authz, err := os.ReadFile(authzPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(passwd, []byte("# users")) || !bytes.Contains(authz, []byte("# acl")) {
+		t.Fatal("comments were not preserved")
+	}
+}
+
+func (a *testAPI) do(method, url string, body any, authenticated, csrf bool) *httptest.ResponseRecorder {
+	var reader *bytes.Reader
+	if body == nil {
+		reader = bytes.NewReader(nil)
+	} else {
+		data, err := json.Marshal(body)
+		if err != nil {
+			a.t.Fatal(err)
+		}
+		reader = bytes.NewReader(data)
+	}
+	request := httptest.NewRequest(method, url, reader)
+	request.Header.Set("Content-Type", "application/json")
+	if authenticated && a.cookie != nil {
+		request.AddCookie(a.cookie)
+	}
+	if csrf {
+		request.Header.Set("X-CSRF-Token", a.csrf)
+	}
+	recorder := httptest.NewRecorder()
+	a.handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func (a *testAPI) readRevisions(recorder *httptest.ResponseRecorder, allowCreated bool) {
+	var response struct {
+		Data struct {
+			Revisions svncfg.Revisions `json:"revisions"`
+		} `json:"data"`
+	}
+	decode(a.t, recorder, &response)
+	if response.Data.Revisions.Passwd == "" || response.Data.Revisions.Authz == "" {
+		a.t.Fatal("response revisions missing")
+	}
+	a.revs = response.Data.Revisions
+}
+
+func decode(t *testing.T, recorder *httptest.ResponseRecorder, target any) {
+	t.Helper()
+	if err := json.Unmarshal(recorder.Body.Bytes(), target); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, recorder.Body.String())
+	}
+}
