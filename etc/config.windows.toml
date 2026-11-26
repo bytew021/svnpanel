@@ -37,9 +37,6 @@ IdleMinutes = 30
 AbsoluteHours = 8
 CookieSecure = false
 
-[Metadata]
-Departments = ["部门A", "部门B", "部门C"]
-
 # 如果希望复用 Linux 配置，可取消下面注释并把路径改成 Windows 实际位置：
 # [PathMap]
 # "/data/svn" = "D:/data/svn"

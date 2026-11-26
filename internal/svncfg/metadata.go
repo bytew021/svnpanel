@@ -6,10 +6,12 @@ import (
 )
 
 const (
-	remarkPrefix     = "# svnpanel:remark:"
-	departmentPrefix = "# svnpanel:department:"
-	metadataPrefix   = "# svnpanel:"
-	maxRemarkLength  = 500
+	remarkPrefix      = "# svnpanel:remark:"
+	departmentPrefix  = "# svnpanel:department:"
+	departmentsPrefix = "# svnpanel:departments:"
+	metadataPrefix    = "# svnpanel:"
+	maxRemarkLength   = 500
+	maxDepartments    = 200
 )
 
 type entityMetadata struct {
@@ -25,6 +27,9 @@ func parseMetadataBefore(lines []Line, entryLine int) (entityMetadata, error) {
 	for i := entryLine - 1; i >= 0; i-- {
 		trimmed := strings.TrimSpace(lines[i].Text)
 		if !strings.HasPrefix(trimmed, metadataPrefix) {
+			break
+		}
+		if strings.HasPrefix(trimmed, departmentsPrefix) {
 			break
 		}
 		metadata.StartLine = i
@@ -68,6 +73,29 @@ func NormalizeDepartment(value string) (string, error) {
 		return "", fmt.Errorf("%w: 部门名称包含非法字符", ErrValidation)
 	}
 	return value, nil
+}
+
+func normalizeDepartments(values []string) ([]string, error) {
+	if len(values) > maxDepartments {
+		return nil, fmt.Errorf("%w: 部门不能超过 %d 个", ErrValidation, maxDepartments)
+	}
+	seen := make(map[string]bool, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value, err := NormalizeDepartment(value)
+		if err != nil {
+			return nil, err
+		}
+		if value == "" {
+			return nil, fmt.Errorf("%w: 部门名称不能为空", ErrValidation)
+		}
+		if seen[value] {
+			return nil, fmt.Errorf("%w: 部门 %s 重复", ErrAmbiguous, value)
+		}
+		seen[value] = true
+		normalized = append(normalized, value)
+	}
+	return normalized, nil
 }
 
 func metadataLines(remark, department string) []string {

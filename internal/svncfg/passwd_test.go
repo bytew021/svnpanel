@@ -99,3 +99,52 @@ func TestPasswdMetadataRoundTrip(t *testing.T) {
 		t.Fatalf("metadata markers were not removed: %q", text)
 	}
 }
+
+func TestPasswdDepartmentDefinitions(t *testing.T) {
+	t.Parallel()
+	original := append([]byte{0xef, 0xbb, 0xbf}, []byte(
+		"# svnpanel:departments: 部门A\r\n# svnpanel:departments: 部门B\r\n# svnpanel:remark: 示例负责人\r\n# svnpanel:department: 部门A\r\nalice = old-password\r\n",
+	)...)
+	doc, err := ParsePasswd(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(doc.Departments, ",") != "部门A,部门B" {
+		t.Fatalf("unexpected departments: %+v", doc.Departments)
+	}
+	if err := doc.AddDepartment("部门C"); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.RenameDepartment("部门A", "部门D"); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Users["alice"].Department != "部门D" {
+		t.Fatalf("user department was not renamed: %+v", doc.Users["alice"])
+	}
+	if err := doc.DeleteDepartment("部门D"); err == nil {
+		t.Fatal("in-use department must not be deleted")
+	}
+	if err := doc.DeleteDepartment("部门B"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(doc.Departments, ",") != "部门D,部门C" {
+		t.Fatalf("unexpected departments after edits: %+v", doc.Departments)
+	}
+	text := string(doc.Doc.Bytes())
+	for _, expected := range []string{
+		"# svnpanel:departments: 部门D\r\n",
+		"# svnpanel:department: 部门D\r\n",
+		"# svnpanel:departments: 部门C\r\n",
+		"alice = old-password\r\n",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("missing %q in %q", expected, text)
+		}
+	}
+	if strings.Contains(text, "# svnpanel:departments: 部门B") {
+		t.Fatalf("deleted department remains: %q", text)
+	}
+	if !bytes.HasPrefix(doc.Doc.Bytes(), []byte{0xef, 0xbb, 0xbf}) {
+		t.Fatal("BOM was not preserved")
+	}
+}

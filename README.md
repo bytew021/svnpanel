@@ -102,20 +102,17 @@ GitHub Actions 会构建、冒烟测试镜像，并在 `main` 分支或 `v*` 标
 
 ## 备注与部门
 
-部门下拉值由配置固定：
-
-```toml
-[Metadata]
-Departments = ["部门A", "部门B", "部门C"]
-```
-
-面板写入的格式如下，其他人工注释不会被识别或改写：
+部门定义保存在共享 `passwd` 文件中，网页端提供新增、重命名和删除：
 
 ```text
+# svnpanel:departments: 部门A
+# svnpanel:departments: 部门B
 # svnpanel:remark: 示例用户
 # svnpanel:department: 部门A
 example_user = example-password
 ```
+
+重命名部门时，所有已使用该部门的用户会同步更新；仍被用户使用的部门不能删除。旧配置中的 `[Metadata] Departments` 已废弃，升级后请在网页端重新维护部门列表。
 
 SVN 分组备注使用同一机制，但只支持备注：
 

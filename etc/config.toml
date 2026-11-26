@@ -37,6 +37,3 @@ Keep = 50
 IdleMinutes = 30
 AbsoluteHours = 8
 CookieSecure = false
-
-[Metadata]
-Departments = ["部门A", "部门B", "部门C"]

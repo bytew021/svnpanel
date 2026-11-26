@@ -1,15 +1,14 @@
 package cfg
 
 type Config struct {
-	Global   GlobalConfig      `toml:"Global"`
-	HTTP     HTTPConfig        `toml:"HTTP"`
-	Admin    AdminConfig       `toml:"Admin"`
-	SVN      SVNConfig         `toml:"SVN"`
-	Audit    AuditConfig       `toml:"Audit"`
-	Backup   BackupConfig      `toml:"Backup"`
-	Session  SessionConfig     `toml:"Session"`
-	Metadata MetadataConfig    `toml:"Metadata"`
-	PathMap  map[string]string `toml:"PathMap"`
+	Global  GlobalConfig      `toml:"Global"`
+	HTTP    HTTPConfig        `toml:"HTTP"`
+	Admin   AdminConfig       `toml:"Admin"`
+	SVN     SVNConfig         `toml:"SVN"`
+	Audit   AuditConfig       `toml:"Audit"`
+	Backup  BackupConfig      `toml:"Backup"`
+	Session SessionConfig     `toml:"Session"`
+	PathMap map[string]string `toml:"PathMap"`
 }
 
 type GlobalConfig struct {
@@ -56,8 +55,4 @@ type SessionConfig struct {
 	IdleMinutes   int  `toml:"IdleMinutes"`
 	AbsoluteHours int  `toml:"AbsoluteHours"`
 	CookieSecure  bool `toml:"CookieSecure"`
-}
-
-type MetadataConfig struct {
-	Departments []string `toml:"Departments"`
 }

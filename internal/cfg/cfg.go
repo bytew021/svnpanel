@@ -129,12 +129,6 @@ func (c *Config) applyDefaults() {
 	if c.Session.AbsoluteHours <= 0 {
 		c.Session.AbsoluteHours = 8
 	}
-	if len(c.Metadata.Departments) == 0 {
-		c.Metadata.Departments = []string{"部门A", "部门B", "部门C"}
-	}
-	for i, department := range c.Metadata.Departments {
-		c.Metadata.Departments[i] = strings.TrimSpace(department)
-	}
 }
 
 func (c *Config) Validate() error {
@@ -170,21 +164,6 @@ func (c *Config) Validate() error {
 				errs = append(errs, fmt.Errorf("%s=%q 是无效的 Windows 根路径；请改为 D:/...、相对路径，或配置 [PathMap]", name, value))
 			}
 		}
-	}
-	seenDepartments := make(map[string]bool)
-	for _, department := range c.Metadata.Departments {
-		department = strings.TrimSpace(department)
-		if department == "" {
-			errs = append(errs, errors.New("Metadata.Departments 不能包含空值"))
-			continue
-		}
-		if strings.ContainsAny(department, "\r\n\x00#") {
-			errs = append(errs, fmt.Errorf("Metadata.Departments 包含非法值 %q", department))
-		}
-		if seenDepartments[department] {
-			errs = append(errs, fmt.Errorf("Metadata.Departments 包含重复值 %q", department))
-		}
-		seenDepartments[department] = true
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)

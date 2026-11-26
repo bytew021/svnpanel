@@ -5,11 +5,14 @@ import BaseDialog from "@/components/BaseDialog.vue";
 import TablePager from "@/components/TablePager.vue";
 import { useTableMaxHeight } from "@/composables/useTableMaxHeight";
 import {
+  addDepartment,
   batchUsers,
   createUser,
+  deleteDepartment,
   deleteUser,
   errorMessage,
   listUsers,
+  renameDepartment,
   resetPassword,
   revealPassword,
   setUserDisabled,
@@ -42,6 +45,10 @@ const dialog = reactive({
   department: "",
 });
 const busy = ref(false);
+const departmentManagerOpen = ref(false);
+const departmentBusy = ref(false);
+const newDepartment = ref("");
+const departmentDrafts = reactive<Record<string, string>>({});
 const { tableMaxHeight } = useTableMaxHeight(250);
 
 const filtered = computed(() =>
@@ -87,6 +94,10 @@ async function load() {
     users.value = result.items;
     departments.value = result.departments ?? [];
     revisions.value = result.revisions;
+    if (departmentFilter.value && !departments.value.includes(departmentFilter.value)) {
+      departmentFilter.value = "";
+    }
+    syncDepartmentDrafts();
     clearSelection();
     for (const name of Object.keys(revealedPasswords)) delete revealedPasswords[name];
   } catch (error) {
@@ -138,6 +149,22 @@ function closeDialog() {
   dialog.password = "";
 }
 
+function syncDepartmentDrafts() {
+  for (const department of Object.keys(departmentDrafts)) delete departmentDrafts[department];
+  for (const department of departments.value) departmentDrafts[department] = department;
+}
+
+function openDepartmentManager() {
+  syncDepartmentDrafts();
+  newDepartment.value = "";
+  departmentManagerOpen.value = true;
+}
+
+function closeDepartmentManager() {
+  departmentManagerOpen.value = false;
+  newDepartment.value = "";
+}
+
 async function submitDialog() {
   busy.value = true;
   try {
@@ -165,19 +192,8 @@ async function submitDialog() {
       success("密码已重置");
       closeDialog();
       await load();
+      return;
     }
-  } catch (error) {
-    failure(errorMessage(error));
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function togglePassword(user: User) {
-  if (revealedPasswords[user.name]) {
-    delete revealedPasswords[user.name];
-    return;
-  }
     if (dialog.mode === "batch-reset") {
       const result = await batchUsers(revisions.value, selectedNames.value, "reset_password", {
         password: dialog.password,
@@ -197,6 +213,18 @@ async function togglePassword(user: User) {
       closeDialog();
       await load();
     }
+  } catch (error) {
+    failure(errorMessage(error));
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function togglePassword(user: User) {
+  if (revealedPasswords[user.name]) {
+    delete revealedPasswords[user.name];
+    return;
+  }
   passwordLoading.value = user.name;
   try {
     const result = await revealPassword(user.name);
@@ -205,6 +233,67 @@ async function togglePassword(user: User) {
     failure(errorMessage(error));
   } finally {
     passwordLoading.value = "";
+  }
+}
+
+async function addDepartmentItem() {
+  const name = newDepartment.value.trim();
+  if (!name) {
+    failure("请输入部门名称");
+    return;
+  }
+  departmentBusy.value = true;
+  try {
+    const result = await addDepartment(revisions.value, name);
+    revisions.value = result.revisions;
+    newDepartment.value = "";
+    success("部门已添加");
+    await load();
+  } catch (error) {
+    failure(errorMessage(error));
+  } finally {
+    departmentBusy.value = false;
+  }
+}
+
+async function renameDepartmentItem(oldName: string) {
+  const name = (departmentDrafts[oldName] ?? "").trim();
+  if (!name || name === oldName) return;
+  if (!(await confirmAction(
+    `重命名部门“${oldName}”？`,
+    `已设置为“${oldName}”的用户会同步改为“${name}”。`,
+  ))) return;
+  departmentBusy.value = true;
+  try {
+    const result = await renameDepartment(revisions.value, oldName, name);
+    revisions.value = result.revisions;
+    success("部门已重命名");
+    await load();
+  } catch (error) {
+    failure(errorMessage(error));
+    await load();
+  } finally {
+    departmentBusy.value = false;
+  }
+}
+
+async function removeDepartmentItem(name: string) {
+  if (!(await confirmAction(
+    `删除部门“${name}”？`,
+    "只有未被任何用户使用的部门才能删除。",
+    true,
+  ))) return;
+  departmentBusy.value = true;
+  try {
+    const result = await deleteDepartment(revisions.value, name);
+    revisions.value = result.revisions;
+    success("部门已删除");
+    await load();
+  } catch (error) {
+    failure(errorMessage(error));
+    await load();
+  } finally {
+    departmentBusy.value = false;
   }
 }
 
@@ -301,7 +390,10 @@ onBeforeUnmount(() => {
           </vxe-select>
           <vxe-button @click="resetFilters">重置</vxe-button>
         </div>
-        <vxe-button type="success" icon="vxe-icon-plus" @click="openCreate">新增 SVN 用户</vxe-button>
+        <div class="flex items-center gap-2">
+          <vxe-button @click="openDepartmentManager">管理部门</vxe-button>
+          <vxe-button type="success" icon="vxe-icon-plus" @click="openCreate">新增 SVN 用户</vxe-button>
+        </div>
       </header>
 
       <vxe-table
@@ -449,6 +541,59 @@ onBeforeUnmount(() => {
           <button class="btn btn-primary" :disabled="busy">{{ busy ? "保存中…" : "确认保存" }}</button>
         </div>
       </form>
+    </BaseDialog>
+
+    <BaseDialog :open="departmentManagerOpen" title="部门管理" @close="closeDepartmentManager">
+      <div class="space-y-4">
+        <form class="flex gap-2" @submit.prevent="addDepartmentItem">
+          <input
+            v-model="newDepartment"
+            class="input"
+            maxlength="64"
+            placeholder="输入新部门名称"
+            autocomplete="off"
+          />
+          <button class="btn btn-primary whitespace-nowrap" :disabled="departmentBusy">添加</button>
+        </form>
+        <div v-if="!departments.length" class="rounded-md bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+          暂无部门，请先添加
+        </div>
+        <div v-else class="max-h-80 space-y-2 overflow-y-auto pr-1">
+          <div
+            v-for="department in departments"
+            :key="department"
+            class="flex items-center gap-2 rounded-md border border-slate-200 p-2"
+          >
+            <input
+              v-model="departmentDrafts[department]"
+              class="input min-w-0 flex-1"
+              maxlength="64"
+              :aria-label="`部门 ${department}`"
+            />
+            <button
+              class="btn btn-secondary whitespace-nowrap"
+              :disabled="departmentBusy || !departmentDrafts[department]?.trim() || departmentDrafts[department]?.trim() === department"
+              @click="renameDepartmentItem(department)"
+            >
+              保存
+            </button>
+            <button
+              class="btn btn-danger whitespace-nowrap"
+              :disabled="departmentBusy"
+              @click="removeDepartmentItem(department)"
+            >
+              删除
+            </button>
+          </div>
+        </div>
+        <p class="text-xs leading-5 text-slate-500">
+          部门定义保存在共享 <code>passwd</code> 文件的
+          <code># svnpanel:departments:</code> 注释中。重命名会同步更新用户引用，被用户使用的部门不能删除。
+        </p>
+        <div class="flex justify-end">
+          <button class="btn btn-secondary" @click="closeDepartmentManager">关闭</button>
+        </div>
+      </div>
     </BaseDialog>
   </div>
 </template>

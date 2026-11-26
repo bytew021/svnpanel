@@ -108,6 +108,30 @@ export async function setUserMetadata(revisions: Revisions, name: string, remark
   return data.data;
 }
 
+export async function addDepartment(revisions: Revisions, name: string) {
+  const { data } = await api.post<{ data: OperationResult }>("/departments", {
+    ...revisions,
+    name,
+  });
+  return data.data;
+}
+
+export async function renameDepartment(revisions: Revisions, oldName: string, name: string) {
+  const { data } = await api.put<{ data: OperationResult }>(
+    `/departments/${encodeURIComponent(oldName)}`,
+    { ...revisions, name },
+  );
+  return data.data;
+}
+
+export async function deleteDepartment(revisions: Revisions, name: string) {
+  const { data } = await api.delete<{ data: OperationResult }>(
+    `/departments/${encodeURIComponent(name)}`,
+    { data: revisions },
+  );
+  return data.data;
+}
+
 export async function setUserDisabled(revisions: Revisions, name: string, disabled: boolean) {
   const { data } = await api.patch<{ data: OperationResult }>(`/users/${encodeURIComponent(name)}`, {
     ...revisions,

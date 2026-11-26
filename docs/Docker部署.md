@@ -18,13 +18,78 @@
 
 必须持久化 `/srv/svn` 和 `/var/lib/svnpanel`。如果使用宿主机绑定目录，请确保 UID/GID `1000` 可以读写。
 
+## Compose 文件
+
+在仓库根目录准备 `compose.yaml` 和 `.env`。完整 `compose.yaml` 内容如下：
+
+```yaml
+services:
+  svnpanel:
+    build:
+      context: .
+    image: svnpanel:local
+    container_name: svnpanel
+    restart: unless-stopped
+    environment:
+      SVNPANEL_ADMIN_USERNAME: "${SVNPANEL_ADMIN_USERNAME:-admin}"
+      SVNPANEL_ADMIN_PASSWORD: "${SVNPANEL_ADMIN_PASSWORD:?请在 .env 中设置 SVNPANEL_ADMIN_PASSWORD}"
+      SVNPANEL_COOKIE_SECURE: "${SVNPANEL_COOKIE_SECURE:-false}"
+      SVNPANEL_TRUSTED_PROXIES: "${SVNPANEL_TRUSTED_PROXIES:-127.0.0.1,::1}"
+      SVNPANEL_HTTP_PORT: "${SVNPANEL_HTTP_PORT:-8080}"
+      SVN_PORT: "${SVN_PORT:-3690}"
+      SVN_INIT_REPO: "${SVN_INIT_REPO:-}"
+    ports:
+      - "${SVNPANEL_HTTP_PORT:-8080}:${SVNPANEL_HTTP_PORT:-8080}"
+      - "${SVN_PORT:-3690}:${SVN_PORT:-3690}"
+    volumes:
+      - svn-data:/srv/svn
+      - svnpanel-data:/var/lib/svnpanel
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 20s
+
+volumes:
+  svn-data:
+  svnpanel-data:
+```
+
+其中：
+
+- `svn-data:/srv/svn` 保存 SVN 仓库、共享 `passwd` 和 `authz`。
+- `svnpanel-data:/var/lib/svnpanel` 保存审计日志和配置修改备份。
+- `8080` 是 Web 管理端口，`3690` 是 `svn://` 协议端口。
+- 容器以 UID/GID `1000` 的非 root 用户运行。
+
+`.env` 示例：
+
+```dotenv
+SVNPANEL_ADMIN_USERNAME=admin
+SVNPANEL_ADMIN_PASSWORD=replace-with-a-long-random-password
+SVNPANEL_COOKIE_SECURE=false
+SVNPANEL_TRUSTED_PROXIES=127.0.0.1,::1
+SVNPANEL_HTTP_PORT=8080
+SVN_PORT=3690
+SVN_INIT_REPO=
+```
+
+必须修改 `SVNPANEL_ADMIN_PASSWORD`。使用 HTTPS 反向代理时，将 `SVNPANEL_COOKIE_SECURE` 设置为 `true`。
+
 ## Compose 启动
 
 ```bash
 cp .env.example .env
 # 编辑 .env，至少修改 SVNPANEL_ADMIN_PASSWORD
 docker compose up -d --build
+docker compose ps
 docker compose logs -f svnpanel
+```
+
+检查面板健康状态：
+
+```bash
+curl --fail http://127.0.0.1:8080/api/v1/healthz
 ```
 
 创建第一个仓库：
@@ -47,6 +112,40 @@ SVN_INIT_REPO=example
 ```
 
 该操作是幂等的，仓库已存在时不会覆盖。
+
+## 更新、停止与数据保留
+
+修改代码或 `compose.yaml` 后重新构建：
+
+```bash
+docker compose up -d --build
+```
+
+只修改 `.env` 时，强制重建容器使环境变量重新生效：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+停止并删除容器，但保留 `svn-data` 和 `svnpanel-data`：
+
+```bash
+docker compose down
+```
+
+不要执行以下命令，除非明确要永久删除 SVN 仓库、审计日志和备份：
+
+```bash
+docker compose down -v
+```
+
+查看资源占用和日志：
+
+```bash
+docker compose ps
+docker compose logs -f --tail=200 svnpanel
+docker stats svnpanel
+```
 
 ## 直接运行镜像
 
@@ -75,7 +174,6 @@ http://127.0.0.1:8080/api/v1/healthz
 | `SVNPANEL_ADMIN_USERNAME` | `admin` | 面板管理员用户名 |
 | `SVNPANEL_ADMIN_PASSWORD` | 无 | 必填；使用环境变量生成运行配置时不能为空或示例值 |
 | `SVNPANEL_COOKIE_SECURE` | `false` | HTTPS 反向代理后应设为 `true` |
-| `SVNPANEL_DEPARTMENTS` | `部门A,部门B,部门C` | 部门下拉值，英文逗号分隔 |
 | `SVNPANEL_TRUSTED_PROXIES` | `127.0.0.1,::1` | 可信反向代理地址，逗号分隔 |
 | `SVNPANEL_HTTP_PORT` | `8080` | 面板容器内监听端口 |
 | `SVN_PORT` | `3690` | `svnserve` 监听端口 |
@@ -84,7 +182,7 @@ http://127.0.0.1:8080/api/v1/healthz
 
 ## 使用自定义配置
 
-挂载配置后，管理员密码、部门、路径等以 TOML 文件为准：
+挂载配置后，管理员密码、路径等以 TOML 文件为准。部门不再由 TOML 配置，而是在共享 `passwd` 文件中维护：
 
 ```bash
 docker run -d \

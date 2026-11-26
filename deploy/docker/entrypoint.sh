@@ -128,13 +128,9 @@ else
     escaped_authz_file=$(toml_escape "$AUTHZ_FILE")
     escaped_audit_dir=$(toml_escape "$STATE_DIR/audit")
     escaped_backup_dir=$(toml_escape "$STATE_DIR/backups")
-    departments_input=${SVNPANEL_DEPARTMENTS:-部门A,部门B,部门C}
     trusted_proxies_input=${SVNPANEL_TRUSTED_PROXIES:-127.0.0.1,::1}
-    validate_single_line "$departments_input" "SVNPANEL_DEPARTMENTS"
     validate_single_line "$trusted_proxies_input" "SVNPANEL_TRUSTED_PROXIES"
-    departments=$(toml_csv_array "$departments_input" "部门A,部门B,部门C" "SVNPANEL_DEPARTMENTS")
     trusted_proxies=$(toml_csv_array "$trusted_proxies_input" "127.0.0.1,::1" "SVNPANEL_TRUSTED_PROXIES")
-    [ -n "$departments" ] || die "SVNPANEL_DEPARTMENTS 配置无效"
     [ -n "$trusted_proxies" ] || die "SVNPANEL_TRUSTED_PROXIES 配置无效"
 
     mkdir -p "$(dirname "$CONFIG_PATH")"
@@ -178,9 +174,6 @@ Keep = 50
 IdleMinutes = 30
 AbsoluteHours = 8
 CookieSecure = ${SVNPANEL_COOKIE_SECURE:-false}
-
-[Metadata]
-Departments = ${departments}
 EOF
     mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
     log "已从环境变量生成运行配置 $CONFIG_PATH"

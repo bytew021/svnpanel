@@ -3,6 +3,7 @@ package svncfg
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -23,8 +24,9 @@ type PasswdUser struct {
 }
 
 type PasswdDoc struct {
-	Doc   *TextDocument
-	Users map[string]PasswdUser
+	Doc         *TextDocument
+	Users       map[string]PasswdUser
+	Departments []string
 }
 
 func ParsePasswd(data []byte) (*PasswdDoc, error) {
@@ -32,8 +34,39 @@ func ParsePasswd(data []byte) (*PasswdDoc, error) {
 		return nil, fmt.Errorf("%w: passwd 不是有效 UTF-8", ErrValidation)
 	}
 	doc := ParseDocument(data)
-	result := &PasswdDoc{Doc: doc, Users: make(map[string]PasswdUser)}
+	result := &PasswdDoc{Doc: doc, Users: make(map[string]PasswdUser), Departments: []string{}}
+	departmentSeen := make(map[string]bool)
+	addDepartment := func(value string, explicit bool) error {
+		normalized, err := NormalizeDepartment(value)
+		if err != nil {
+			return err
+		}
+		if explicit && normalized == "" {
+			return fmt.Errorf("%w: 部门名称不能为空", ErrValidation)
+		}
+		if normalized == "" {
+			return nil
+		}
+		if explicit && departmentSeen[normalized] {
+			return fmt.Errorf("%w: passwd 中存在重复部门 %s", ErrAmbiguous, normalized)
+		}
+		if !departmentSeen[normalized] {
+			departmentSeen[normalized] = true
+			result.Departments = append(result.Departments, normalized)
+			if len(result.Departments) > maxDepartments {
+				return fmt.Errorf("%w: 部门不能超过 %d 个", ErrValidation, maxDepartments)
+			}
+		}
+		return nil
+	}
 	for i, line := range doc.Lines {
+		trimmed := strings.TrimSpace(line.Text)
+		if strings.HasPrefix(trimmed, departmentsPrefix) {
+			if err := addDepartment(strings.TrimPrefix(trimmed, departmentsPrefix), true); err != nil {
+				return nil, fmt.Errorf("解析第 %d 行部门定义失败: %w", i+1, err)
+			}
+			continue
+		}
 		name, value, disabled, ok := parsePasswdLine(line.Text)
 		if !ok {
 			continue
@@ -48,6 +81,9 @@ func ParsePasswd(data []byte) (*PasswdDoc, error) {
 		result.Users[name] = PasswdUser{
 			Name: name, Value: value, Disabled: disabled, Line: i, Encoding: PasswordEncoding(value),
 			Remark: metadata.Remark, Department: metadata.Department, metadata: metadata,
+		}
+		if err := addDepartment(metadata.Department, false); err != nil {
+			return nil, fmt.Errorf("解析用户 %s 的部门失败: %w", name, err)
 		}
 	}
 	return result, nil
@@ -233,10 +269,138 @@ func (d *PasswdDoc) SetMetadata(name, remark, department string) error {
 	return nil
 }
 
+func (d *PasswdDoc) AddDepartment(name string) error {
+	name, err := NormalizeDepartment(name)
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		return fmt.Errorf("%w: 部门名称不能为空", ErrValidation)
+	}
+	for _, current := range d.Departments {
+		if current == name {
+			return fmt.Errorf("%w: 部门 %s 已存在", ErrConflict, name)
+		}
+	}
+	next := append(append([]string(nil), d.Departments...), name)
+	if err := d.setDepartments(next); err != nil {
+		return err
+	}
+	d.reindex()
+	return nil
+}
+
+func (d *PasswdDoc) RenameDepartment(oldName, newName string) error {
+	var err error
+	oldName, err = NormalizeDepartment(oldName)
+	if err != nil {
+		return err
+	}
+	newName, err = NormalizeDepartment(newName)
+	if err != nil {
+		return err
+	}
+	if oldName == "" || newName == "" {
+		return fmt.Errorf("%w: 部门名称不能为空", ErrValidation)
+	}
+	if oldName == newName {
+		return nil
+	}
+	if !containsString(d.Departments, oldName) {
+		return fmt.Errorf("%w: 部门 %s", ErrNotFound, oldName)
+	}
+	if containsString(d.Departments, newName) {
+		return fmt.Errorf("%w: 部门 %s 已存在", ErrConflict, newName)
+	}
+
+	next := append([]string(nil), d.Departments...)
+	for i, current := range next {
+		if current == oldName {
+			next[i] = newName
+			break
+		}
+	}
+
+	users := make([]string, 0)
+	for name, user := range d.Users {
+		if user.Department == oldName {
+			users = append(users, name)
+		}
+	}
+	sort.Slice(users, func(i, j int) bool {
+		return d.Users[users[i]].Line > d.Users[users[j]].Line
+	})
+	for _, name := range users {
+		user := d.Users[name]
+		if err := d.SetMetadata(name, user.Remark, newName); err != nil {
+			return err
+		}
+	}
+
+	if err := d.setDepartments(next); err != nil {
+		return err
+	}
+	d.reindex()
+	return nil
+}
+
+func (d *PasswdDoc) DeleteDepartment(name string) error {
+	var err error
+	name, err = NormalizeDepartment(name)
+	if err != nil {
+		return err
+	}
+	if !containsString(d.Departments, name) {
+		return fmt.Errorf("%w: 部门 %s", ErrNotFound, name)
+	}
+	for _, user := range d.Users {
+		if user.Department == name {
+			return fmt.Errorf("%w: 部门 %s 仍被用户 %s 使用", ErrConflict, name, user.Name)
+		}
+	}
+	next := make([]string, 0, len(d.Departments)-1)
+	for _, current := range d.Departments {
+		if current != name {
+			next = append(next, current)
+		}
+	}
+	if err := d.setDepartments(next); err != nil {
+		return err
+	}
+	d.reindex()
+	return nil
+}
+
+func (d *PasswdDoc) setDepartments(departments []string) error {
+	normalized, err := normalizeDepartments(departments)
+	if err != nil {
+		return err
+	}
+	for i := len(d.Doc.Lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(strings.TrimSpace(d.Doc.Lines[i].Text), departmentsPrefix) {
+			d.Doc.RemoveLine(i)
+		}
+	}
+	for i, department := range normalized {
+		d.Doc.InsertLine(i, departmentsPrefix+" "+department)
+	}
+	return nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *PasswdDoc) reindex() {
 	parsed, err := ParsePasswd(d.Doc.Bytes())
 	if err == nil {
 		d.Users = parsed.Users
+		d.Departments = parsed.Departments
 	}
 }
 

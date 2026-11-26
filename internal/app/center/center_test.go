@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,7 +36,9 @@ func TestUserGroupACLFlow(t *testing.T) {
 	if err := os.MkdirAll(repoRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(passwdPath, []byte("# users\nalice = old-password\n#disabled#bob = disabled-password\n"), 0o600); err != nil {
+	if err := os.WriteFile(passwdPath, []byte(
+		"# svnpanel:departments: 部门A\n# svnpanel:departments: 部门B\n# users\nalice = old-password\n#disabled#bob = disabled-password\n",
+	), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(authzPath, []byte("# acl\n[groups]\nqa = bob\n\n[demo:/trunk]\nqa = r\n"), 0o600); err != nil {
@@ -49,10 +52,9 @@ func TestUserGroupACLFlow(t *testing.T) {
 			RepoRoot: repoRoot, PasswdFile: passwdPath, AuthzFile: authzPath,
 			SvnlookPath: "svnlook", CommandTimeoutSec: 2, MaxCommandOutputMiB: 1, MaxPathsPerLevel: 100,
 		},
-		Audit:    cfg.AuditConfig{Dir: filepath.Join(dir, "audit")},
-		Backup:   cfg.BackupConfig{Dir: filepath.Join(dir, "backups"), Keep: 50},
-		Session:  cfg.SessionConfig{IdleMinutes: 30, AbsoluteHours: 8, CookieSecure: false},
-		Metadata: cfg.MetadataConfig{Departments: []string{"部门A", "部门B"}},
+		Audit:   cfg.AuditConfig{Dir: filepath.Join(dir, "audit")},
+		Backup:  cfg.BackupConfig{Dir: filepath.Join(dir, "backups"), Keep: 50},
+		Session: cfg.SessionConfig{IdleMinutes: 30, AbsoluteHours: 8, CookieSecure: false},
 	}
 	svc := service.New(config)
 	if err := svc.Manager.Validate(); err != nil {
@@ -106,7 +108,8 @@ func TestUserGroupACLFlow(t *testing.T) {
 			Items []struct {
 				Name string `json:"name"`
 			} `json:"items"`
-			Revisions svncfg.Revisions `json:"revisions"`
+			Departments []string         `json:"departments"`
+			Revisions   svncfg.Revisions `json:"revisions"`
 		} `json:"data"`
 	}
 	decode(t, usersResp, &users)
@@ -114,15 +117,69 @@ func TestUserGroupACLFlow(t *testing.T) {
 	if len(users.Data.Items) != 2 {
 		t.Fatalf("unexpected users: %+v", users.Data.Items)
 	}
+	if len(users.Data.Departments) != 2 {
+		t.Fatalf("unexpected departments: %+v", users.Data.Departments)
+	}
+
+	addedDepartment := api.do(http.MethodPost, "/api/v1/departments", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz, "name": "部门C",
+	}, true, true)
+	if addedDepartment.Code != http.StatusCreated {
+		t.Fatalf("add department failed: %d %s", addedDepartment.Code, addedDepartment.Body.String())
+	}
+	api.readRevisions(addedDepartment, true)
+
+	renamedDepartment := api.do(http.MethodPut, "/api/v1/departments/"+url.PathEscape("部门C"), map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz, "name": "部门D",
+	}, true, true)
+	if renamedDepartment.Code != http.StatusOK {
+		t.Fatalf("rename department failed: %d %s", renamedDepartment.Code, renamedDepartment.Body.String())
+	}
+	api.readRevisions(renamedDepartment, false)
 
 	created := api.do(http.MethodPost, "/api/v1/users", map[string]any{
 		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
-		"name": "carol", "password": "carol-password", "remark": "示例成员", "department": "部门A",
+		"name": "carol", "password": "carol-password", "remark": "示例成员", "department": "部门D",
 	}, true, true)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create user failed: %d %s", created.Code, created.Body.String())
 	}
 	api.readRevisions(created, true)
+
+	renameInUse := api.do(http.MethodPut, "/api/v1/departments/"+url.PathEscape("部门D"), map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz, "name": "部门E",
+	}, true, true)
+	if renameInUse.Code != http.StatusOK {
+		t.Fatalf("rename in-use department failed: %d %s", renameInUse.Code, renameInUse.Body.String())
+	}
+	api.readRevisions(renameInUse, false)
+
+	usersAfterRename := api.do(http.MethodGet, "/api/v1/users", nil, true, false)
+	var renamedUsers struct {
+		Data struct {
+			Items []struct {
+				Name       string `json:"name"`
+				Department string `json:"department"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	decode(t, usersAfterRename, &renamedUsers)
+	carolDepartment := ""
+	for _, user := range renamedUsers.Data.Items {
+		if user.Name == "carol" {
+			carolDepartment = user.Department
+		}
+	}
+	if carolDepartment != "部门E" {
+		t.Fatalf("department rename did not update user: %q", carolDepartment)
+	}
+
+	deleteInUse := api.do(http.MethodDelete, "/api/v1/departments/"+url.PathEscape("部门E"), map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+	}, true, true)
+	if deleteInUse.Code != http.StatusConflict {
+		t.Fatalf("expected in-use department delete conflict, got %d", deleteInUse.Code)
+	}
 
 	metadataUpdated := api.do(http.MethodPut, "/api/v1/users/carol/metadata", map[string]any{
 		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
@@ -132,6 +189,14 @@ func TestUserGroupACLFlow(t *testing.T) {
 		t.Fatalf("update metadata failed: %d %s", metadataUpdated.Code, metadataUpdated.Body.String())
 	}
 	api.readRevisions(metadataUpdated, false)
+
+	deletedDepartment := api.do(http.MethodDelete, "/api/v1/departments/"+url.PathEscape("部门E"), map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+	}, true, true)
+	if deletedDepartment.Code != http.StatusOK {
+		t.Fatalf("delete department failed: %d %s", deletedDepartment.Code, deletedDepartment.Body.String())
+	}
+	api.readRevisions(deletedDepartment, false)
 
 	batch := api.do(http.MethodPost, "/api/v1/users/batch", map[string]any{
 		"passwd": api.revs.Passwd, "authz": api.revs.Authz,

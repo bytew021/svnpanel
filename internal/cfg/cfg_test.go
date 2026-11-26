@@ -18,6 +18,9 @@ Password = "password"
 RepoRoot = "/srv/svn/repos"
 PasswdFile = "/srv/svn/etc/passwd"
 AuthzFile = "/srv/svn/etc/authz"
+
+[Metadata]
+Departments = ["legacy-department"]
 `)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -34,9 +37,6 @@ AuthzFile = "/srv/svn/etc/authz"
 	}
 	if config.Backup.Keep != 50 || config.Session.IdleMinutes != 30 {
 		t.Fatalf("unexpected runtime defaults: %+v %+v", config.Backup, config.Session)
-	}
-	if len(config.Metadata.Departments) == 0 {
-		t.Fatal("default departments missing")
 	}
 }
 

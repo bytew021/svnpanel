@@ -120,20 +120,20 @@ func (s *Service) ListUsers() (dto.UsersResponse, error) {
 	sortUsers(items)
 	return dto.UsersResponse{
 		Items: items, Revisions: state.Revisions,
-		Departments: append([]string(nil), s.Config.Metadata.Departments...),
+		Departments: append([]string(nil), state.Passwd.Departments...),
 	}, nil
 }
 
 func (s *Service) CreateUser(revisions svncfg.Revisions, name, password, remark, department, clientIP string) (dto.OperationResult, error) {
-	department, err := s.validateDepartment(department)
-	if err != nil {
-		return dto.OperationResult{}, err
-	}
 	ctx, cancel := s.operationContext()
 	defer cancel()
 	state, err := s.Manager.Apply(ctx, revisions,
 		func(passwd *svncfg.PasswdDoc, _ *svncfg.AuthzDoc) error {
-			return passwd.AddUser(name, password, remark, department)
+			normalized, err := validateDepartmentInDoc(passwd, department)
+			if err != nil {
+				return err
+			}
+			return passwd.AddUser(name, password, remark, normalized)
 		},
 		func(backup string) error {
 			return s.Audit.Append(audit.Event{
@@ -150,15 +150,15 @@ func (s *Service) CreateUser(revisions svncfg.Revisions, name, password, remark,
 }
 
 func (s *Service) SetUserMetadata(revisions svncfg.Revisions, name, remark, department, clientIP string) (dto.OperationResult, error) {
-	department, err := s.validateDepartment(department)
-	if err != nil {
-		return dto.OperationResult{}, err
-	}
 	ctx, cancel := s.operationContext()
 	defer cancel()
 	state, err := s.Manager.Apply(ctx, revisions,
 		func(passwd *svncfg.PasswdDoc, _ *svncfg.AuthzDoc) error {
-			return passwd.SetMetadata(name, remark, department)
+			normalized, err := validateDepartmentInDoc(passwd, department)
+			if err != nil {
+				return err
+			}
+			return passwd.SetMetadata(name, remark, normalized)
 		},
 		func(_ string) error {
 			return s.Audit.Append(audit.Event{
@@ -258,6 +258,67 @@ func (s *Service) DeleteUser(revisions svncfg.Revisions, name, clientIP string) 
 	return dto.OperationResult{Revisions: state.Revisions, Message: "用户已删除"}, nil
 }
 
+func (s *Service) AddDepartment(revisions svncfg.Revisions, name, clientIP string) (dto.OperationResult, error) {
+	ctx, cancel := s.operationContext()
+	defer cancel()
+	state, err := s.Manager.Apply(ctx, revisions,
+		func(passwd *svncfg.PasswdDoc, _ *svncfg.AuthzDoc) error {
+			return passwd.AddDepartment(name)
+		},
+		func(_ string) error {
+			return s.Audit.Append(audit.Event{
+				Actor: s.Config.Admin.Username, Action: "department.create", Outcome: "success",
+				Target: name, ClientIP: clientIP,
+			})
+		})
+	if err != nil {
+		s.auditFailure("department.create", name, clientIP, err)
+		return dto.OperationResult{}, err
+	}
+	return dto.OperationResult{Revisions: state.Revisions, Message: "部门已添加"}, nil
+}
+
+func (s *Service) RenameDepartment(revisions svncfg.Revisions, oldName, newName, clientIP string) (dto.OperationResult, error) {
+	ctx, cancel := s.operationContext()
+	defer cancel()
+	state, err := s.Manager.Apply(ctx, revisions,
+		func(passwd *svncfg.PasswdDoc, _ *svncfg.AuthzDoc) error {
+			return passwd.RenameDepartment(oldName, newName)
+		},
+		func(_ string) error {
+			return s.Audit.Append(audit.Event{
+				Actor: s.Config.Admin.Username, Action: "department.rename", Outcome: "success",
+				Target: oldName, ClientIP: clientIP,
+				Details: map[string]any{"newName": newName},
+			})
+		})
+	if err != nil {
+		s.auditFailure("department.rename", oldName, clientIP, err)
+		return dto.OperationResult{}, err
+	}
+	return dto.OperationResult{Revisions: state.Revisions, Message: "部门已重命名"}, nil
+}
+
+func (s *Service) DeleteDepartment(revisions svncfg.Revisions, name, clientIP string) (dto.OperationResult, error) {
+	ctx, cancel := s.operationContext()
+	defer cancel()
+	state, err := s.Manager.Apply(ctx, revisions,
+		func(passwd *svncfg.PasswdDoc, _ *svncfg.AuthzDoc) error {
+			return passwd.DeleteDepartment(name)
+		},
+		func(_ string) error {
+			return s.Audit.Append(audit.Event{
+				Actor: s.Config.Admin.Username, Action: "department.delete", Outcome: "success",
+				Target: name, ClientIP: clientIP,
+			})
+		})
+	if err != nil {
+		s.auditFailure("department.delete", name, clientIP, err)
+		return dto.OperationResult{}, err
+	}
+	return dto.OperationResult{Revisions: state.Revisions, Message: "部门已删除"}, nil
+}
+
 func (s *Service) BatchUsers(
 	revisions svncfg.Revisions,
 	names []string,
@@ -281,13 +342,6 @@ func (s *Service) BatchUsers(
 			return dto.OperationResult{}, err
 		}
 	}
-	if action == "set_department" {
-		var err error
-		department, err = s.validateDepartment(department)
-		if err != nil {
-			return dto.OperationResult{}, err
-		}
-	}
 	switch action {
 	case "enable", "disable", "reset_password", "set_department":
 	default:
@@ -298,6 +352,13 @@ func (s *Service) BatchUsers(
 	defer cancel()
 	state, err := s.Manager.Apply(ctx, revisions,
 		func(passwd *svncfg.PasswdDoc, _ *svncfg.AuthzDoc) error {
+			if action == "set_department" {
+				var err error
+				department, err = validateDepartmentInDoc(passwd, department)
+				if err != nil {
+					return err
+				}
+			}
 			for _, name := range uniqueNames {
 				if _, ok := passwd.Users[name]; !ok {
 					return fmt.Errorf("%w: 用户 %s", svncfg.ErrNotFound, name)
@@ -570,7 +631,7 @@ func (s *Service) operationContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 10*time.Second)
 }
 
-func (s *Service) validateDepartment(department string) (string, error) {
+func validateDepartmentInDoc(passwd *svncfg.PasswdDoc, department string) (string, error) {
 	department, err := svncfg.NormalizeDepartment(department)
 	if err != nil {
 		return "", err
@@ -578,12 +639,12 @@ func (s *Service) validateDepartment(department string) (string, error) {
 	if department == "" {
 		return "", nil
 	}
-	for _, allowed := range s.Config.Metadata.Departments {
+	for _, allowed := range passwd.Departments {
 		if department == allowed {
 			return department, nil
 		}
 	}
-	return "", fmt.Errorf("%w: 部门 %s 不在固定列表中", svncfg.ErrValidation, department)
+	return "", fmt.Errorf("%w: 部门 %s 不存在，请先在部门管理中添加", svncfg.ErrValidation, department)
 }
 
 func (s *Service) auditFailure(action, target, clientIP string, err error) {
