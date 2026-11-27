@@ -24,6 +24,7 @@ const revisions = ref<Revisions>({ passwd: "", authz: "" });
 const loading = ref(false);
 const page = ref(1);
 const pageSize = ref(20);
+const memberKeyword = ref("");
 const dialog = reactive({
   open: false,
   editing: false,
@@ -50,6 +51,16 @@ const pageItems = computed(() =>
     ? groups.value
     : groups.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value),
 );
+const filteredUsers = computed(() => {
+  const keyword = memberKeyword.value.trim().toLowerCase();
+  if (!keyword) return users.value;
+  return users.value.filter(
+    (user) =>
+      user.name.toLowerCase().includes(keyword) ||
+      (user.department ?? "").toLowerCase().includes(keyword) ||
+      (user.remark ?? "").toLowerCase().includes(keyword),
+  );
+});
 
 watch(
   () => groups.value.length,
@@ -75,10 +86,12 @@ async function load() {
 }
 
 function openCreate() {
+  memberKeyword.value = "";
   Object.assign(dialog, { open: true, editing: false, originalName: "", name: "", remark: "", members: [] });
 }
 
 function openEdit(group: Group) {
+  memberKeyword.value = "";
   Object.assign(dialog, {
     open: true,
     editing: true,
@@ -257,7 +270,7 @@ onMounted(load);
   </section>
 
   <BaseDialog :open="dialog.open" :title="dialog.editing ? `编辑分组 · ${dialog.originalName}` : '新增 SVN 分组'" @close="closeDialog">
-    <form class="space-y-5" @submit.prevent="submit">
+    <form id="group-editor-form" class="space-y-5" @submit.prevent="submit">
       <label v-if="!dialog.editing" class="block">
         <span class="mb-2 block text-sm font-semibold text-slate-700">分组名称</span>
         <input v-model="dialog.name" class="input" maxlength="64" placeholder="例如 developers" />
@@ -268,29 +281,52 @@ onMounted(load);
         <span class="mt-1 block text-xs text-slate-500">保存为分组条目上方的 # svnpanel:remark 注释</span>
       </label>
       <div>
-        <div class="mb-2 text-sm font-semibold text-slate-700">选择成员</div>
+        <div class="mb-2 flex items-center justify-between gap-3">
+          <div class="text-sm font-semibold text-slate-700">选择成员</div>
+          <div class="text-xs text-slate-500">已选 {{ dialog.members.length }} 人</div>
+        </div>
+        <vxe-input
+          v-model="memberKeyword"
+          class="mb-2"
+          style="width: 100%"
+          placeholder="筛选用户名、部门或备注..."
+          clearable
+        />
         <div class="max-h-80 overflow-auto rounded-lg border border-slate-200 p-2">
           <label
-            v-for="user in users"
+            v-for="user in filteredUsers"
             :key="user.name"
-            class="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 hover:bg-slate-50"
+            class="flex cursor-pointer items-start justify-between gap-3 rounded-md px-3 py-2 hover:bg-slate-50"
           >
-            <span class="flex items-center gap-2">
-              <input v-model="dialog.members" type="checkbox" :value="user.name" class="h-4 w-4" />
-              <span class="font-mono text-sm">{{ user.name }}</span>
+            <span class="flex min-w-0 items-start gap-2">
+              <input v-model="dialog.members" type="checkbox" :value="user.name" class="mt-0.5 h-4 w-4 shrink-0" />
+              <span class="min-w-0">
+                <span class="block truncate font-mono text-sm text-slate-800">{{ user.name }}</span>
+                <span class="mt-0.5 block truncate text-xs text-slate-500">
+                  {{ user.department || "未设置部门" }}-{{ user.remark || "无备注" }}
+                </span>
+              </span>
             </span>
-            <span v-if="user.disabled" class="badge badge-gray">已禁用</span>
+            <span v-if="user.disabled" class="badge badge-gray shrink-0">已禁用</span>
           </label>
           <div v-if="!users.length" class="empty text-sm">还没有 SVN 用户</div>
+          <div v-else-if="!filteredUsers.length" class="empty text-sm">没有匹配的成员</div>
         </div>
       </div>
+    </form>
+    <template #footer>
       <div class="flex justify-end gap-2">
         <button type="button" class="btn btn-secondary" @click="closeDialog">取消</button>
-        <button class="btn btn-primary" :disabled="busy || (!dialog.editing && !dialog.name.trim())">
+        <button
+          type="submit"
+          form="group-editor-form"
+          class="btn btn-primary"
+          :disabled="busy || (!dialog.editing && !dialog.name.trim())"
+        >
           {{ busy ? "保存中…" : "保存" }}
         </button>
       </div>
-    </form>
+    </template>
   </BaseDialog>
 
   <BaseDialog :open="permissionDialog.open" :title="`目录权限设定 · ${permissionDialog.group}`" wide @close="closePermissions">
