@@ -240,7 +240,7 @@ onMounted(load);
       </vxe-column>
       <vxe-column title="操作" width="220" align="center">
         <template #default="{ row }">
-          <div class="flex justify-end gap-1">
+          <div class="flex justify-center gap-1">
             <vxe-button size="small" mode="text" status="primary" :disabled="row.unsupported" @click="openPermissions(row)">权限</vxe-button>
             <vxe-button size="small" mode="text" status="primary" :disabled="row.unsupported" @click="openEdit(row)">编辑</vxe-button>
             <vxe-button size="small" mode="text" status="danger" :disabled="row.unsupported" @click="remove(row)">删除</vxe-button>

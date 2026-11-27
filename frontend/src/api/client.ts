@@ -126,13 +126,21 @@ export async function restoreSnapshot(revisions: Revisions, id: string) {
   return data.data;
 }
 
-export async function createUser(revisions: Revisions, name: string, password: string, remark = "", department = "") {
+export async function createUser(
+  revisions: Revisions,
+  name: string,
+  password: string,
+  remark = "",
+  department = "",
+  groups: string[] = [],
+) {
   const { data } = await api.post<{ data: OperationResult }>("/users", {
     ...revisions,
     name,
     password,
     remark,
     department,
+    groups,
   });
   return data.data;
 }

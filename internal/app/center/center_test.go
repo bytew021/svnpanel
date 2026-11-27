@@ -224,11 +224,54 @@ func TestUserGroupACLFlow(t *testing.T) {
 	created := api.do(http.MethodPost, "/api/v1/users", map[string]any{
 		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
 		"name": "carol", "password": "carol-password", "remark": "示例成员", "department": "部门D",
+		"groups": []string{"qa"},
 	}, true, true)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create user failed: %d %s", created.Code, created.Body.String())
 	}
 	api.readRevisions(created, true)
+
+	groupsAfterCreate := api.do(http.MethodGet, "/api/v1/groups", nil, true, false)
+	var createdUserGroups struct {
+		Data struct {
+			Items []struct {
+				Name    string   `json:"name"`
+				Members []string `json:"members"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	decode(t, groupsAfterCreate, &createdUserGroups)
+	qaMembers := []string{}
+	for _, group := range createdUserGroups.Data.Items {
+		if group.Name == "qa" {
+			qaMembers = group.Members
+		}
+	}
+	if strings.Join(qaMembers, ",") != "bob,carol" {
+		t.Fatalf("created user was not added to selected group: %+v", qaMembers)
+	}
+
+	failedCreate := api.do(http.MethodPost, "/api/v1/users", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"name": "dave", "password": "dave-password", "groups": []string{"missing-group"},
+	}, true, true)
+	if failedCreate.Code != http.StatusNotFound {
+		t.Fatalf("expected missing group failure, got %d %s", failedCreate.Code, failedCreate.Body.String())
+	}
+	usersAfterFailure := api.do(http.MethodGet, "/api/v1/users", nil, true, false)
+	var afterFailure struct {
+		Data struct {
+			Items []struct {
+				Name string `json:"name"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	decode(t, usersAfterFailure, &afterFailure)
+	for _, user := range afterFailure.Data.Items {
+		if user.Name == "dave" {
+			t.Fatal("failed group assignment must roll back user creation")
+		}
+	}
 
 	renameInUse := api.do(http.MethodPut, "/api/v1/departments/"+url.PathEscape("部门D"), map[string]any{
 		"passwd": api.revs.Passwd, "authz": api.revs.Authz, "name": "部门E",
@@ -396,6 +439,15 @@ func TestUserGroupACLFlow(t *testing.T) {
 		t.Fatalf("remove group failed: %d %s", removeGroup.Code, removeGroup.Body.String())
 	}
 	api.readRevisions(removeGroup, false)
+
+	removeFromInitialGroup := api.do(http.MethodPut, "/api/v1/groups/qa/members", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz,
+		"members": []string{"bob"}, "remark": "",
+	}, true, true)
+	if removeFromInitialGroup.Code != http.StatusOK {
+		t.Fatalf("remove initial group member failed: %d %s", removeFromInitialGroup.Code, removeFromInitialGroup.Body.String())
+	}
+	api.readRevisions(removeFromInitialGroup, false)
 
 	removeUser := api.do(http.MethodDelete, "/api/v1/users/carol", map[string]any{
 		"passwd": api.revs.Passwd, "authz": api.revs.Authz,

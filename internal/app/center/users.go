@@ -23,10 +23,11 @@ func listUsers(svc *service.Service) gin.HandlerFunc {
 
 type createUserRequest struct {
 	revisionsRequest
-	Name       string `json:"name"`
-	Password   string `json:"password"`
-	Remark     string `json:"remark"`
-	Department string `json:"department"`
+	Name       string   `json:"name"`
+	Password   string   `json:"password"`
+	Remark     string   `json:"remark"`
+	Department string   `json:"department"`
+	Groups     []string `json:"groups"`
 }
 
 func createUser(svc *service.Service) gin.HandlerFunc {
@@ -38,7 +39,7 @@ func createUser(svc *service.Service) gin.HandlerFunc {
 		}
 		result, err := svc.CreateUser(
 			request.revisionsRequest.value(), request.Name, request.Password,
-			request.Remark, request.Department, c.ClientIP(),
+			request.Remark, request.Department, request.Groups, c.ClientIP(),
 		)
 		if err != nil {
 			respondError(c, err)

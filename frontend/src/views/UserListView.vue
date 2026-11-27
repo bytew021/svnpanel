@@ -11,6 +11,7 @@ import {
   deleteDepartment,
   deleteUser,
   errorMessage,
+  listGroups,
   listUsers,
   renameDepartment,
   resetPassword,
@@ -18,7 +19,7 @@ import {
   setUserDisabled,
   setUserMetadata,
 } from "@/api/client";
-import type { Revisions, User } from "@/types";
+import type { Group, Revisions, User } from "@/types";
 import { confirmAction, failure, success } from "@/utils/notify";
 
 const users = ref<User[]>([]);
@@ -28,6 +29,7 @@ const keyword = ref("");
 const status = ref("all");
 const departmentFilter = ref("");
 const departments = ref<string[]>([]);
+const groups = ref<Group[]>([]);
 const page = ref(1);
 const pageSize = ref(20);
 const selectedNames = ref<string[]>([]);
@@ -43,6 +45,7 @@ const dialog = reactive({
   password: "",
   remark: "",
   department: "",
+  groups: [] as string[],
 });
 const busy = ref(false);
 const departmentManagerOpen = ref(false);
@@ -90,10 +93,11 @@ watch([page, pageSize], () => {
 async function load() {
   loading.value = true;
   try {
-    const result = await listUsers();
-    users.value = result.items;
-    departments.value = result.departments ?? [];
-    revisions.value = result.revisions;
+    const [userResult, groupResult] = await Promise.all([listUsers(), listGroups()]);
+    users.value = userResult.items;
+    departments.value = userResult.departments ?? [];
+    groups.value = groupResult.items;
+    revisions.value = userResult.revisions;
     if (departmentFilter.value && !departments.value.includes(departmentFilter.value)) {
       departmentFilter.value = "";
     }
@@ -109,7 +113,7 @@ async function load() {
 
 function openCreate() {
   Object.assign(dialog, {
-    open: true, mode: "create", user: "", password: "", remark: "", department: "",
+    open: true, mode: "create", user: "", password: "", remark: "", department: "", groups: [],
   });
 }
 
@@ -120,27 +124,29 @@ function resetFilters() {
 }
 
 function openReset(user: string) {
-  Object.assign(dialog, { open: true, mode: "reset", user, password: "", remark: "", department: "" });
+  Object.assign(dialog, {
+    open: true, mode: "reset", user, password: "", remark: "", department: "", groups: [],
+  });
 }
 
 function openMetadata(user: User) {
   Object.assign(dialog, {
     open: true, mode: "metadata", user: user.name, password: "", remark: user.remark ?? "",
-    department: user.department ?? "",
+    department: user.department ?? "", groups: [],
   });
 }
 
 function openBatchReset() {
   statusMenuOpen.value = false;
   Object.assign(dialog, {
-    open: true, mode: "batch-reset", user: "", password: "", remark: "", department: "",
+    open: true, mode: "batch-reset", user: "", password: "", remark: "", department: "", groups: [],
   });
 }
 
 function openBatchDepartment() {
   statusMenuOpen.value = false;
   Object.assign(dialog, {
-    open: true, mode: "batch-department", user: "", password: "", remark: "", department: "",
+    open: true, mode: "batch-department", user: "", password: "", remark: "", department: "", groups: [],
   });
 }
 
@@ -170,7 +176,12 @@ async function submitDialog() {
   try {
     if (dialog.mode === "create") {
       const result = await createUser(
-        revisions.value, dialog.user.trim(), dialog.password, dialog.remark, dialog.department,
+        revisions.value,
+        dialog.user.trim(),
+        dialog.password,
+        dialog.remark,
+        dialog.department,
+        dialog.groups,
       );
       revisions.value = result.revisions;
       success("用户已创建");
@@ -218,6 +229,39 @@ async function submitDialog() {
   } finally {
     busy.value = false;
   }
+}
+
+const passwordLower = "abcdefghijklmnopqrstuvwxyz";
+const passwordUpper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const passwordDigits = "0123456789";
+const passwordAlphabet = passwordLower + passwordUpper + passwordDigits;
+
+function secureRandomIndex(max: number) {
+  const range = 0x100000000;
+  const limit = range - (range % max);
+  const values = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(values);
+  } while (values[0] >= limit);
+  return values[0] % max;
+}
+
+function randomChar(source: string) {
+  return source[secureRandomIndex(source.length)];
+}
+
+function generateRandomPassword() {
+  const chars = [
+    randomChar(passwordLower),
+    randomChar(passwordUpper),
+    randomChar(passwordDigits),
+  ];
+  while (chars.length < 16) chars.push(randomChar(passwordAlphabet));
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = secureRandomIndex(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  dialog.password = chars.join("");
 }
 
 async function togglePassword(user: User) {
@@ -459,7 +503,7 @@ onBeforeUnmount(() => {
         </vxe-column>
         <vxe-column title="操作" width="230" align="center">
           <template #default="{ row }">
-            <div class="flex justify-end gap-1">
+            <div class="flex justify-center gap-1">
               <vxe-button size="small" mode="text" status="primary" @click="openMetadata(row)">备注</vxe-button>
               <vxe-button size="small" mode="text" status="warning" @click="openReset(row.name)">重置</vxe-button>
               <vxe-button size="small" mode="text" :status="row.disabled ? 'success' : 'warning'" @click="toggleUser(row)">{{ row.disabled ? "启用" : "禁用" }}</vxe-button>
@@ -519,21 +563,70 @@ onBeforeUnmount(() => {
           <input v-model="dialog.user" class="input" maxlength="64" placeholder="字母、数字、. _ -" autocomplete="off" />
           <span class="mt-1 block text-xs text-slate-500">名称创建后不可修改</span>
         </label>
-        <label v-if="dialog.mode === 'create' || dialog.mode === 'reset' || dialog.mode === 'batch-reset'" class="block">
+        <div v-if="dialog.mode === 'create' || dialog.mode === 'reset' || dialog.mode === 'batch-reset'" class="block">
           <span class="mb-2 block text-sm font-semibold text-slate-700">新密码</span>
-          <input v-model="dialog.password" class="input" type="password" autocomplete="new-password" />
-          <span class="mt-1 block text-xs text-slate-500">8–128 个字符，保存后会写入 svnserve passwd 文件</span>
-        </label>
+          <div class="flex gap-2">
+            <input
+              v-model="dialog.password"
+              class="input"
+              :type="dialog.mode === 'create' ? 'text' : 'password'"
+              autocomplete="new-password"
+            />
+            <button
+              v-if="dialog.mode === 'create'"
+              type="button"
+              class="btn btn-secondary whitespace-nowrap"
+              @click="generateRandomPassword"
+            >
+              生成随机密码
+            </button>
+          </div>
+          <span class="mt-1 block text-xs text-slate-500">
+            {{ dialog.mode === "create" ? "随机密码为 16 位，包含大小写字母和数字" : "8–128 个字符" }}，保存后会写入 svnserve passwd 文件
+          </span>
+        </div>
         <label v-if="dialog.mode === 'create' || dialog.mode === 'metadata' || dialog.mode === 'batch-department'" class="block">
           <span class="mb-2 block text-sm font-semibold text-slate-700">部门</span>
-          <select v-model="dialog.department" class="input">
-            <option value="">不设置</option>
-            <option v-for="department in departments" :key="department" :value="department">{{ department }}</option>
-          </select>
+          <vxe-select
+            v-model="dialog.department"
+            clearable
+            filterable
+            placeholder="不设置"
+            style="width: 100%"
+          >
+            <vxe-option value="" label="不设置" />
+            <vxe-option v-for="department in departments" :key="department" :value="department" :label="department" />
+          </vxe-select>
+        </label>
+        <label v-if="dialog.mode === 'create'" class="block">
+          <span class="mb-2 block text-sm font-semibold text-slate-700">SVN 分组</span>
+          <vxe-select
+            v-model="dialog.groups"
+            multiple
+            clearable
+            filterable
+            placeholder="可选，支持同时加入多个分组"
+            style="width: 100%"
+          >
+            <vxe-option
+              v-for="group in groups"
+              :key="group.name"
+              :value="group.name"
+              :label="`@${group.name}${group.remark ? ` · ${group.remark}` : ''}${group.unsupported ? ' · 含未知语法' : ` · ${group.members.length} 人`}`"
+              :disabled="group.unsupported"
+            />
+          </vxe-select>
+          <span class="mt-1 block text-xs text-slate-500">创建用户时会原子写入 passwd 和所选分组，保存后可在分组页继续调整</span>
         </label>
         <label v-if="dialog.mode === 'create' || dialog.mode === 'metadata'" class="block">
           <span class="mb-2 block text-sm font-semibold text-slate-700">备注</span>
-          <input v-model="dialog.remark" class="input" maxlength="500" placeholder="例如：客户端负责人" />
+          <vxe-input
+            v-model="dialog.remark"
+            maxlength="500"
+            clearable
+            placeholder="例如：客户端负责人"
+            style="width: 100%"
+          />
           <span class="mt-1 block text-xs text-slate-500">单行文本，保存为条目上方的 # svnpanel:remark 注释</span>
         </label>
         <div class="flex justify-end gap-2 pt-2">
@@ -546,12 +639,13 @@ onBeforeUnmount(() => {
     <BaseDialog :open="departmentManagerOpen" title="部门管理" @close="closeDepartmentManager">
       <div class="space-y-4">
         <form class="flex gap-2" @submit.prevent="addDepartmentItem">
-          <input
+          <vxe-input
             v-model="newDepartment"
-            class="input"
             maxlength="64"
+            clearable
             placeholder="输入新部门名称"
             autocomplete="off"
+            style="min-width: 0; flex: 1"
           />
           <button class="btn btn-primary whitespace-nowrap" :disabled="departmentBusy">添加</button>
         </form>
@@ -564,11 +658,11 @@ onBeforeUnmount(() => {
             :key="department"
             class="flex items-center gap-2 rounded-md border border-slate-200 p-2"
           >
-            <input
+            <vxe-input
               v-model="departmentDrafts[department]"
-              class="input min-w-0 flex-1"
+              class="min-w-0 flex-1"
               maxlength="64"
-              :aria-label="`部门 ${department}`"
+              style="min-width: 0"
             />
             <button
               class="btn btn-secondary whitespace-nowrap"

@@ -213,22 +213,49 @@ func svnserveFileInfo(path string) dto.SvnserveFileInfo {
 	return info
 }
 
-func (s *Service) CreateUser(revisions svncfg.Revisions, name, password, remark, department, clientIP string) (dto.OperationResult, error) {
+func (s *Service) CreateUser(
+	revisions svncfg.Revisions,
+	name, password, remark, department string,
+	groups []string,
+	clientIP string,
+) (dto.OperationResult, error) {
 	ctx, cancel := s.operationContext()
 	defer cancel()
 	state, err := s.Manager.Apply(ctx, revisions,
-		func(passwd *svncfg.PasswdDoc, _ *svncfg.AuthzDoc) error {
+		func(passwd *svncfg.PasswdDoc, authz *svncfg.AuthzDoc) error {
 			normalized, err := validateDepartmentInDoc(passwd, department)
 			if err != nil {
 				return err
 			}
-			return passwd.AddUser(name, password, remark, normalized)
+			if err := passwd.AddUser(name, password, remark, normalized); err != nil {
+				return err
+			}
+			seen := make(map[string]bool)
+			for _, groupName := range groups {
+				groupName = strings.TrimSpace(groupName)
+				if groupName == "" || seen[groupName] {
+					continue
+				}
+				seen[groupName] = true
+				group, err := authz.GroupByName(groupName)
+				if err != nil {
+					return err
+				}
+				if group.Unsupported {
+					return fmt.Errorf("%w: 分组 %s 含不支持的结构", svncfg.ErrAmbiguous, groupName)
+				}
+				members := append(append([]string(nil), group.Members...), name)
+				if err := authz.SetGroupMembers(groupName, members); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 		func(backup string) error {
 			return s.Audit.Append(audit.Event{
 				Actor: s.Config.Admin.Username, Action: "user.create", Outcome: "success",
 				Target: name, ClientIP: clientIP,
-				Details: map[string]any{"backup": backup},
+				Details: map[string]any{"backup": backup, "groups": groups},
 			})
 		})
 	if err != nil {
