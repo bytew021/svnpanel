@@ -87,6 +87,52 @@ func TestManagerRollsBackWhenPostWriteHookFails(t *testing.T) {
 	}
 }
 
+func TestManagerRawApplyValidatesAndCreatesBackup(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	passwdPath := filepath.Join(dir, "passwd")
+	authzPath := filepath.Join(dir, "authz")
+	backupDir := filepath.Join(dir, "backups")
+	if err := os.WriteFile(passwdPath, []byte("alice = old-password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(authzPath, []byte("[groups]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(passwdPath, authzPath, backupDir, 3)
+	state, err := manager.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nextPasswd := []byte("# raw edit\nbob = raw-password\n")
+	updated, err := manager.ApplyRaw(context.Background(), RawFilePasswd, state.Revisions, nextPasswd, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := updated.Passwd.Users["bob"]; !ok {
+		t.Fatalf("raw passwd update not parsed: %+v", updated.Passwd.Users)
+	}
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) < 2 {
+		t.Fatal("raw update backup was not created")
+	}
+
+	if _, err := manager.ApplyRaw(
+		context.Background(), RawFileAuthz, state.Revisions, []byte("[groups]\n"), nil,
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected stale revision conflict, got %v", err)
+	}
+	if _, err := manager.ApplyRaw(
+		context.Background(), RawFileAuthz, updated.Revisions, []byte{0xff}, nil,
+	); err == nil {
+		t.Fatal("invalid authz must be rejected")
+	}
+}
+
 func TestManagerPrunesOldBackups(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

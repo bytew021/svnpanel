@@ -63,7 +63,10 @@ async function signOut() {
           <span class="text-sm text-slate-700">{{ auth.username }}</span>
         </div>
       </header>
-      <div class="app-content p-6">
+      <div
+        class="app-content p-6"
+        :class="route.name === 'files' ? 'h-[calc(100vh-4rem)] overflow-hidden' : ''"
+      >
         <RouterView />
       </div>
     </main>

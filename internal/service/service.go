@@ -173,6 +173,53 @@ func (s *Service) SetUserMetadata(revisions svncfg.Revisions, name, remark, depa
 	return dto.OperationResult{Revisions: state.Revisions, Message: "用户备注已更新"}, nil
 }
 
+func (s *Service) GetRawFiles() (dto.RawFilesResponse, error) {
+	state, err := s.Manager.Read()
+	if err != nil {
+		return dto.RawFilesResponse{}, err
+	}
+	return dto.RawFilesResponse{
+		Passwd: dto.RawFile{
+			Content:  string(state.RawPasswd),
+			Revision: state.Revisions.Passwd,
+		},
+		Authz: dto.RawFile{
+			Content:  string(state.RawAuthz),
+			Revision: state.Revisions.Authz,
+		},
+		Revisions: state.Revisions,
+	}, nil
+}
+
+func (s *Service) UpdateRawFile(
+	revisions svncfg.Revisions,
+	name, content, clientIP string,
+) (dto.OperationResult, error) {
+	kind, err := svncfg.ParseRawFileKind(name)
+	if err != nil {
+		return dto.OperationResult{}, err
+	}
+	oldRevision := revisions.Authz
+	if kind == svncfg.RawFilePasswd {
+		oldRevision = revisions.Passwd
+	}
+	ctx, cancel := s.operationContext()
+	defer cancel()
+	state, err := s.Manager.ApplyRaw(ctx, kind, revisions, []byte(content),
+		func(_ string) error {
+			return s.Audit.Append(audit.Event{
+				Actor: s.Config.Admin.Username, Action: "file." + string(kind) + ".update",
+				Outcome: "success", Target: string(kind), ClientIP: clientIP,
+				Details: map[string]any{"oldRevision": oldRevision},
+			})
+		})
+	if err != nil {
+		s.auditFailure("file."+string(kind)+".update", string(kind), clientIP, err)
+		return dto.OperationResult{}, err
+	}
+	return dto.OperationResult{Revisions: state.Revisions, Message: "原生文件已保存"}, nil
+}
+
 func (s *Service) SetUserDisabled(revisions svncfg.Revisions, name string, disabled bool, clientIP string) (dto.OperationResult, error) {
 	action := "user.disable"
 	if !disabled {

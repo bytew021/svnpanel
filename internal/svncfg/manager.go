@@ -18,6 +18,24 @@ type Revisions struct {
 	Authz  string `json:"authz"`
 }
 
+type RawFileKind string
+
+const (
+	RawFilePasswd RawFileKind = "passwd"
+	RawFileAuthz  RawFileKind = "authz"
+)
+
+func ParseRawFileKind(value string) (RawFileKind, error) {
+	switch RawFileKind(value) {
+	case RawFilePasswd:
+		return RawFilePasswd, nil
+	case RawFileAuthz:
+		return RawFileAuthz, nil
+	default:
+		return "", fmt.Errorf("%w: 不支持的文件 %s", ErrValidation, value)
+	}
+}
+
 type State struct {
 	Passwd    *PasswdDoc
 	Authz     *AuthzDoc
@@ -191,6 +209,85 @@ func (m *Manager) Apply(
 	updated, err := parseState(newPasswd, newAuthz)
 	if err != nil {
 		rollback()
+		return nil, err
+	}
+	return updated, nil
+}
+
+func (m *Manager) ApplyRaw(
+	ctx context.Context,
+	target RawFileKind,
+	expected Revisions,
+	content []byte,
+	afterWrite func(backupDir string) error,
+) (*State, error) {
+	if err := os.MkdirAll(m.backupDir, 0o700); err != nil {
+		return nil, fmt.Errorf("创建备份目录失败: %w", err)
+	}
+	if err := m.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer m.unlock()
+
+	passwdData, err := os.ReadFile(m.passwdPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取 passwd 失败: %w", err)
+	}
+	authzData, err := os.ReadFile(m.authzPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取 authz 失败: %w", err)
+	}
+	currentRevisions := Revisions{Passwd: Revision(passwdData), Authz: Revision(authzData)}
+	if expected != currentRevisions {
+		return nil, fmt.Errorf("%w: 期望 %+v，当前 %+v", ErrConflict, expected, currentRevisions)
+	}
+
+	newPasswd := passwdData
+	newAuthz := authzData
+	var targetPath string
+	switch target {
+	case RawFilePasswd:
+		newPasswd = append([]byte(nil), content...)
+		targetPath = m.passwdPath
+	case RawFileAuthz:
+		newAuthz = append([]byte(nil), content...)
+		targetPath = m.authzPath
+	default:
+		return nil, fmt.Errorf("%w: 不支持的文件 %s", ErrValidation, target)
+	}
+	if equalBytes(passwdData, newPasswd) && equalBytes(authzData, newAuthz) {
+		return parseState(passwdData, authzData)
+	}
+	if _, err := parseState(newPasswd, newAuthz); err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(targetPath)
+	if err != nil {
+		return nil, err
+	}
+	backupDir, err := m.createBackup(passwdData, authzData)
+	if err != nil {
+		return nil, err
+	}
+	original := authzData
+	replacement := newAuthz
+	if target == RawFilePasswd {
+		original = passwdData
+		replacement = newPasswd
+	}
+	if err := writeAtomic(targetPath, replacement, info.Mode().Perm()); err != nil {
+		return nil, fmt.Errorf("写入 %s 失败: %w", target, err)
+	}
+	if afterWrite != nil {
+		if err := afterWrite(backupDir); err != nil {
+			_ = writeAtomic(targetPath, original, info.Mode().Perm())
+			return nil, fmt.Errorf("发布后审计失败，已回滚: %w", err)
+		}
+	}
+	m.pruneBackups()
+	updated, err := parseState(newPasswd, newAuthz)
+	if err != nil {
+		_ = writeAtomic(targetPath, original, info.Mode().Perm())
 		return nil, err
 	}
 	return updated, nil

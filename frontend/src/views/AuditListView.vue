@@ -37,6 +37,8 @@ const actionLabels: Record<string, string> = {
   "department.create": "添加部门",
   "department.rename": "重命名部门",
   "department.delete": "删除部门",
+  "file.passwd.update": "编辑 passwd 文件",
+  "file.authz.update": "编辑 authz 文件",
   "group.create": "新增分组",
   "group.members.update": "更新分组成员",
   "group.delete": "删除分组",

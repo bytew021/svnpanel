@@ -48,6 +48,9 @@ func Config(r *gin.Engine, svc *service.Service) {
 	protected.PUT("/departments/:name", requireCSRF(), renameDepartment(svc))
 	protected.DELETE("/departments/:name", requireCSRF(), deleteDepartment(svc))
 
+	protected.GET("/files", listRawFiles(svc))
+	protected.PUT("/files/:name", requireCSRF(), updateRawFile(svc))
+
 	protected.GET("/groups", listGroups(svc))
 	protected.POST("/groups", requireCSRF(), createGroup(svc))
 	protected.PUT("/groups/:name/members", requireCSRF(), setGroupMembers(svc))

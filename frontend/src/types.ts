@@ -17,6 +17,19 @@ export interface UsersResponse {
   departments: string[];
 }
 
+export type RawFileName = "passwd" | "authz";
+
+export interface RawFile {
+  content: string;
+  revision: string;
+}
+
+export interface RawFilesResponse {
+  passwd: RawFile;
+  authz: RawFile;
+  revisions: Revisions;
+}
+
 export interface Group {
   name: string;
   members: string[];

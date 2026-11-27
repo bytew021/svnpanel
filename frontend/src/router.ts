@@ -19,6 +19,7 @@ const router = createRouter({
         { path: "users", name: "users", component: () => import("@/views/UserListView.vue") },
         { path: "groups", name: "groups", component: () => import("@/views/GroupListView.vue") },
         { path: "permissions", name: "permissions", component: () => import("@/views/PermissionView.vue") },
+        { path: "files", name: "files", component: () => import("@/views/RawFilesView.vue") },
         { path: "audits", name: "audits", component: () => import("@/views/AuditListView.vue") },
       ],
     },

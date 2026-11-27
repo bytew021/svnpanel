@@ -16,6 +16,17 @@ type UsersResponse struct {
 	Departments []string         `json:"departments"`
 }
 
+type RawFile struct {
+	Content  string `json:"content"`
+	Revision string `json:"revision"`
+}
+
+type RawFilesResponse struct {
+	Passwd    RawFile          `json:"passwd"`
+	Authz     RawFile          `json:"authz"`
+	Revisions svncfg.Revisions `json:"revisions"`
+}
+
 type Group struct {
 	Name        string                   `json:"name"`
 	Members     []string                 `json:"members"`

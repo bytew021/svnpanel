@@ -9,6 +9,8 @@ import type {
   OperationResult,
   PathNode,
   Permission,
+  RawFileName,
+  RawFilesResponse,
   Revisions,
   Repository,
   UsersResponse,
@@ -85,6 +87,19 @@ export async function logout() {
 
 export async function listUsers() {
   const { data } = await api.get<{ data: UsersResponse }>("/users");
+  return data.data;
+}
+
+export async function getRawFiles() {
+  const { data } = await api.get<{ data: RawFilesResponse }>("/files");
+  return data.data;
+}
+
+export async function updateRawFile(name: RawFileName, revisions: Revisions, content: string) {
+  const { data } = await api.put<{ data: OperationResult }>(`/files/${name}`, {
+    ...revisions,
+    content,
+  });
   return data.data;
 }
 

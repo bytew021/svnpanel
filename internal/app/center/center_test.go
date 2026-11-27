@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"svnpanel/internal/app/center"
@@ -119,6 +120,35 @@ func TestUserGroupACLFlow(t *testing.T) {
 	}
 	if len(users.Data.Departments) != 2 {
 		t.Fatalf("unexpected departments: %+v", users.Data.Departments)
+	}
+
+	rawFilesResponse := api.do(http.MethodGet, "/api/v1/files", nil, true, false)
+	var rawFiles struct {
+		Data struct {
+			Passwd struct {
+				Content string `json:"content"`
+			} `json:"passwd"`
+			Authz struct {
+				Content string `json:"content"`
+			} `json:"authz"`
+		} `json:"data"`
+	}
+	decode(t, rawFilesResponse, &rawFiles)
+	if !strings.Contains(rawFiles.Data.Passwd.Content, "alice = old-password") {
+		t.Fatalf("raw passwd content missing: %q", rawFiles.Data.Passwd.Content)
+	}
+	rawAuthz := rawFiles.Data.Authz.Content + "\n# raw editor comment\n"
+	rawUpdate := api.do(http.MethodPut, "/api/v1/files/authz", map[string]any{
+		"passwd": api.revs.Passwd, "authz": api.revs.Authz, "content": rawAuthz,
+	}, true, true)
+	if rawUpdate.Code != http.StatusOK {
+		t.Fatalf("raw authz update failed: %d %s", rawUpdate.Code, rawUpdate.Body.String())
+	}
+	api.readRevisions(rawUpdate, true)
+	rawFilesResponse = api.do(http.MethodGet, "/api/v1/files", nil, true, false)
+	decode(t, rawFilesResponse, &rawFiles)
+	if !strings.Contains(rawFiles.Data.Authz.Content, "# raw editor comment") {
+		t.Fatal("raw authz update was not persisted")
 	}
 
 	addedDepartment := api.do(http.MethodPost, "/api/v1/departments", map[string]any{
