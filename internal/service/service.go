@@ -149,7 +149,12 @@ func (s *Service) GetSvnserveInfo(ctx context.Context) dto.SvnserveInfo {
 		RepoRoot:   s.Config.SVN.RepoRoot,
 		Passwd:     svnserveFileInfo(s.Config.SVN.PasswdFile),
 		Authz:      svnserveFileInfo(s.Config.SVN.AuthzFile),
-		CheckedAt:  time.Now().UTC().Format(time.RFC3339),
+		SvnserveConfig: readSvnserveConfigInfo(
+			s.Config.SVN.SvnserveConfigFile,
+			s.Config.SVN.PasswdFile,
+			s.Config.SVN.AuthzFile,
+		),
+		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	var issues []string
 

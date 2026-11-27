@@ -57,6 +57,25 @@ export interface SvnserveFileInfo {
   modifiedAt?: string;
 }
 
+export interface SvnserveConfigInfo {
+  path: string;
+  exists: boolean;
+  readable: boolean;
+  size?: number;
+  modifiedAt?: string;
+  passwordDb?: string;
+  passwordDbResolved?: string;
+  passwordMatches: boolean;
+  authzDb?: string;
+  authzDbResolved?: string;
+  authzMatches: boolean;
+  realm?: string;
+  anonAccess?: string;
+  authAccess?: string;
+  content?: string;
+  warnings: string[];
+}
+
 export interface SvnserveInfo {
   available: boolean;
   executable: string;
@@ -68,6 +87,7 @@ export interface SvnserveInfo {
   repoRoot: string;
   passwd: SvnserveFileInfo;
   authz: SvnserveFileInfo;
+  svnserveConfig: SvnserveConfigInfo;
   repositories: Repository[];
   totalLatestRevision: number;
   checkedAt: string;

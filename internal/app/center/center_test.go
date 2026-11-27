@@ -45,6 +45,11 @@ func TestUserGroupACLFlow(t *testing.T) {
 	if err := os.WriteFile(authzPath, []byte("# acl\n[groups]\nqa = bob\n\n[demo:/trunk]\nqa = r\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "svnserve.conf"), []byte(
+		"[general]\npassword-db = passwd\nauthz-db = authz\nrealm = test\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	config := &cfg.Config{
 		Global: cfg.GlobalConfig{Title: "test", RunMode: "release"},
 		HTTP:   cfg.HTTPConfig{Host: "127.0.0.1", Port: 8080, MaxContentLength: 1 << 20},
@@ -96,10 +101,16 @@ func TestUserGroupACLFlow(t *testing.T) {
 	svnserveResponse := api.do(http.MethodGet, "/api/v1/svnserve", nil, true, false)
 	var svnserveInfo struct {
 		Data struct {
-			Executable string              `json:"executable"`
-			Port       int                 `json:"port"`
-			RepoRoot   string              `json:"repoRoot"`
-			Items      []svncfg.Repository `json:"repositories"`
+			Executable     string              `json:"executable"`
+			Port           int                 `json:"port"`
+			RepoRoot       string              `json:"repoRoot"`
+			Items          []svncfg.Repository `json:"repositories"`
+			SvnserveConfig struct {
+				Path            string `json:"path"`
+				PasswordMatches bool   `json:"passwordMatches"`
+				AuthzMatches    bool   `json:"authzMatches"`
+				Realm           string `json:"realm"`
+			} `json:"svnserveConfig"`
 		} `json:"data"`
 	}
 	decode(t, svnserveResponse, &svnserveInfo)
@@ -108,6 +119,11 @@ func TestUserGroupACLFlow(t *testing.T) {
 	}
 	if svnserveInfo.Data.Items == nil {
 		t.Fatal("empty svnserve repository list must be encoded as []")
+	}
+	if !svnserveInfo.Data.SvnserveConfig.PasswordMatches ||
+		!svnserveInfo.Data.SvnserveConfig.AuthzMatches ||
+		svnserveInfo.Data.SvnserveConfig.Realm != "test" {
+		t.Fatalf("unexpected svnserve config: %+v", svnserveInfo.Data.SvnserveConfig)
 	}
 
 	repositories := api.do(http.MethodGet, "/api/v1/repositories", nil, true, false)

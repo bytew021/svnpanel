@@ -41,6 +41,9 @@ Departments = ["legacy-department"]
 	if config.SVN.SvnservePath != "svnserve" || config.SVN.SvnservePort != 3690 {
 		t.Fatalf("unexpected svnserve defaults: %+v", config.SVN)
 	}
+	if config.SVN.SvnserveConfigFile != filepath.Join(filepath.Dir(config.SVN.PasswdFile), "svnserve.conf") {
+		t.Fatalf("unexpected svnserve config path: %s", config.SVN.SvnserveConfigFile)
+	}
 }
 
 func TestLoadAppliesLongestPathMap(t *testing.T) {

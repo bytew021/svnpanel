@@ -65,7 +65,7 @@ async function signOut() {
       </header>
       <div
         class="app-content p-6"
-        :class="route.name === 'files' || route.name === 'permissions' ? 'h-[calc(100vh-4rem)] overflow-hidden' : ''"
+        :class="['files', 'permissions', 'svnserve'].includes(String(route.name)) ? 'h-[calc(100vh-4rem)] overflow-hidden' : ''"
       >
         <RouterView />
       </div>

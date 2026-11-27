@@ -20,6 +20,7 @@ Password = "replace-with-a-long-random-password"
 RepoRoot = "/srv/svn/repos"
 PasswdFile = "/srv/svn/etc/passwd"
 AuthzFile = "/srv/svn/etc/authz"
+SvnserveConfigFile = "/srv/svn/etc/svnserve.conf"
 SvnlookPath = "/usr/bin/svnlook"
 SvnservePath = "/usr/bin/svnserve"
 SvnservePort = 3690

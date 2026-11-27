@@ -46,6 +46,25 @@ type SvnserveFileInfo struct {
 	ModifiedAt string `json:"modifiedAt,omitempty"`
 }
 
+type SvnserveConfigInfo struct {
+	Path               string   `json:"path"`
+	Exists             bool     `json:"exists"`
+	Readable           bool     `json:"readable"`
+	Size               int64    `json:"size,omitempty"`
+	ModifiedAt         string   `json:"modifiedAt,omitempty"`
+	PasswordDB         string   `json:"passwordDb,omitempty"`
+	PasswordDBResolved string   `json:"passwordDbResolved,omitempty"`
+	PasswordMatches    bool     `json:"passwordMatches"`
+	AuthzDB            string   `json:"authzDb,omitempty"`
+	AuthzDBResolved    string   `json:"authzDbResolved,omitempty"`
+	AuthzMatches       bool     `json:"authzMatches"`
+	Realm              string   `json:"realm,omitempty"`
+	AnonAccess         string   `json:"anonAccess,omitempty"`
+	AuthAccess         string   `json:"authAccess,omitempty"`
+	Content            string   `json:"content,omitempty"`
+	Warnings           []string `json:"warnings"`
+}
+
 type SvnserveInfo struct {
 	Available           bool                `json:"available"`
 	Executable          string              `json:"executable"`
@@ -57,6 +76,7 @@ type SvnserveInfo struct {
 	RepoRoot            string              `json:"repoRoot"`
 	Passwd              SvnserveFileInfo    `json:"passwd"`
 	Authz               SvnserveFileInfo    `json:"authz"`
+	SvnserveConfig      SvnserveConfigInfo  `json:"svnserveConfig"`
 	Repositories        []svncfg.Repository `json:"repositories"`
 	TotalLatestRevision int64               `json:"totalLatestRevision"`
 	CheckedAt           string              `json:"checkedAt"`

@@ -12,7 +12,7 @@
 | 容器目录 | 内容 |
 | --- | --- |
 | `/srv/svn/repos` | 所有 SVN 仓库 |
-| `/srv/svn/etc` | 共享的 `passwd`、`authz` |
+| `/srv/svn/etc` | 共享的 `passwd`、`authz` 和 `svnserve.conf` |
 | `/var/lib/svnpanel/audit` | 永久审计日志 |
 | `/var/lib/svnpanel/backups` | 配置变更备份和可网页还原的历史快照 |
 
@@ -37,6 +37,8 @@ services:
       SVNPANEL_TRUSTED_PROXIES: "${SVNPANEL_TRUSTED_PROXIES:-127.0.0.1,::1}"
       SVNPANEL_HTTP_PORT: "${SVNPANEL_HTTP_PORT:-8080}"
       SVN_PORT: "${SVN_PORT:-3690}"
+      SVN_REALM: "${SVN_REALM:-svn}"
+      SVN_SERVE_CONFIG_FILE: "${SVN_SERVE_CONFIG_FILE:-}"
       SVN_INIT_REPO: "${SVN_INIT_REPO:-}"
     ports:
       - "${SVNPANEL_HTTP_PORT:-8080}:${SVNPANEL_HTTP_PORT:-8080}"
@@ -58,6 +60,7 @@ volumes:
 其中：
 
 - `svn-data:/srv/svn` 保存 SVN 仓库、共享 `passwd` 和 `authz`。
+- 容器首次启动会在 `/srv/svn/etc/svnserve.conf` 生成共享认证配置，以 `--config-file` 统一应用到所有仓库。
 - `svnpanel-data:/var/lib/svnpanel` 保存审计日志和配置修改备份。
 - `8080` 是 Web 管理端口，`3690` 是 `svn://` 协议端口。
 - 容器以 UID/GID `1000` 的非 root 用户运行。
@@ -71,6 +74,8 @@ SVNPANEL_COOKIE_SECURE=false
 SVNPANEL_TRUSTED_PROXIES=127.0.0.1,::1
 SVNPANEL_HTTP_PORT=8080
 SVN_PORT=3690
+SVN_REALM=svn
+SVN_SERVE_CONFIG_FILE=
 SVN_INIT_REPO=
 ```
 
@@ -98,7 +103,7 @@ curl --fail http://127.0.0.1:8080/api/v1/healthz
 docker compose exec svnpanel svn-repo-init example
 ```
 
-仓库创建脚本会生成使用共享 `passwd` 和 `authz` 的 `svnserve.conf`。随后：
+容器启动时会确保 `/srv/svn/etc/svnserve.conf` 存在，并让 `svnserve` 使用该文件统一读取共享 `passwd` 和 `authz`。已有配置文件不会被覆盖；如需使用自定义路径，可设置 `SVN_SERVE_CONFIG_FILE`。随后：
 
 1. 打开 `http://<host>:8080` 并登录管理面板。
 2. 在面板新增 SVN 用户。

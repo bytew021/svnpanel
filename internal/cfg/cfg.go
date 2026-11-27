@@ -67,6 +67,7 @@ func (c *Config) applyPathMap() {
 	c.SVN.RepoRoot = remap(c.SVN.RepoRoot)
 	c.SVN.PasswdFile = remap(c.SVN.PasswdFile)
 	c.SVN.AuthzFile = remap(c.SVN.AuthzFile)
+	c.SVN.SvnserveConfigFile = remap(c.SVN.SvnserveConfigFile)
 	c.Audit.Dir = remap(c.Audit.Dir)
 	c.Backup.Dir = remap(c.Backup.Dir)
 }
@@ -110,6 +111,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.SVN.SvnservePort == 0 {
 		c.SVN.SvnservePort = 3690
+	}
+	if strings.TrimSpace(c.SVN.SvnserveConfigFile) == "" {
+		c.SVN.SvnserveConfigFile = filepath.Join(filepath.Dir(c.SVN.PasswdFile), "svnserve.conf")
 	}
 	if c.SVN.CommandTimeoutSec <= 0 {
 		c.SVN.CommandTimeoutSec = 5

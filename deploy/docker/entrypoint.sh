@@ -5,6 +5,8 @@ REPO_ROOT=${SVN_REPO_ROOT:-/srv/svn/repos}
 AUTH_DIR=${SVN_AUTH_DIR:-/srv/svn/etc}
 PASSWD_FILE=${AUTH_DIR}/passwd
 AUTHZ_FILE=${AUTH_DIR}/authz
+SVN_SERVE_CONFIG_FILE=${SVN_SERVE_CONFIG_FILE:-${AUTH_DIR}/svnserve.conf}
+SVN_REALM=${SVN_REALM:-svn}
 STATE_DIR=${SVNPANEL_STATE_DIR:-/var/lib/svnpanel}
 RUNTIME_DIR=${SVNPANEL_RUNTIME_DIR:-/run/svnpanel}
 CONFIG_PATH=${SVNPANEL_CONFIG_FILE:-${RUNTIME_DIR}/config.toml}
@@ -96,6 +98,22 @@ if [ ! -f "$AUTHZ_FILE" ]; then
 fi
 chmod 0600 "$PASSWD_FILE" "$AUTHZ_FILE"
 
+if [ ! -f "$SVN_SERVE_CONFIG_FILE" ]; then
+    validate_single_line "$SVN_REALM" "SVN_REALM"
+    mkdir -p "$(dirname "$SVN_SERVE_CONFIG_FILE")"
+    cat >"$SVN_SERVE_CONFIG_FILE" <<EOF
+[general]
+anon-access = none
+auth-access = write
+password-db = ${PASSWD_FILE}
+authz-db = ${AUTHZ_FILE}
+realm = ${SVN_REALM}
+EOF
+    chmod 0600 "$SVN_SERVE_CONFIG_FILE"
+    log "已生成共享 svnserve 配置 $SVN_SERVE_CONFIG_FILE"
+fi
+[ -r "$SVN_SERVE_CONFIG_FILE" ] || die "无法读取 svnserve 配置 $SVN_SERVE_CONFIG_FILE"
+
 if [ -n "${SVN_INIT_REPO:-}" ]; then
     "$SVN_REPO_INIT_BIN" "$SVN_INIT_REPO"
 fi
@@ -126,6 +144,7 @@ else
     escaped_repo_root=$(toml_escape "$REPO_ROOT")
     escaped_passwd_file=$(toml_escape "$PASSWD_FILE")
     escaped_authz_file=$(toml_escape "$AUTHZ_FILE")
+    escaped_svnserve_config_file=$(toml_escape "$SVN_SERVE_CONFIG_FILE")
     escaped_audit_dir=$(toml_escape "$STATE_DIR/audit")
     escaped_backup_dir=$(toml_escape "$STATE_DIR/backups")
     trusted_proxies_input=${SVNPANEL_TRUSTED_PROXIES:-127.0.0.1,::1}
@@ -158,6 +177,7 @@ Password = "${escaped_password}"
 RepoRoot = "${escaped_repo_root}"
 PasswdFile = "${escaped_passwd_file}"
 AuthzFile = "${escaped_authz_file}"
+SvnserveConfigFile = "${escaped_svnserve_config_file}"
 SvnlookPath = "/usr/bin/svnlook"
 SvnservePath = "/usr/bin/svnserve"
 SvnservePort = ${SVN_PORT}
@@ -183,6 +203,7 @@ fi
 
 log "启动 svnserve，监听端口 ${SVN_PORT}"
 "$SVN_SERVE_BIN" --daemon --foreground \
+    --config-file "$SVN_SERVE_CONFIG_FILE" \
     --root "$REPO_ROOT" \
     --listen-host 0.0.0.0 \
     --listen-port "$SVN_PORT" &

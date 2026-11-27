@@ -57,6 +57,7 @@ RUN chmod 0755 \
 
 ENV SVN_REPO_ROOT=/srv/svn/repos \
     SVN_AUTH_DIR=/srv/svn/etc \
+    SVN_REALM=svn \
     SVN_PORT=3690 \
     SVNPANEL_HTTP_PORT=8080 \
     SVNPANEL_ADMIN_USERNAME=admin \

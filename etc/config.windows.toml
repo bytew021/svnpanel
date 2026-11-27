@@ -20,6 +20,7 @@ Password = "change-me-before-use"
 RepoRoot = "data/repos"
 PasswdFile = "data/conf/passwd"
 AuthzFile = "data/conf/authz"
+SvnserveConfigFile = "data/conf/svnserve.conf"
 SvnlookPath = "svnlook"
 SvnservePath = "svnserve"
 SvnservePort = 3690

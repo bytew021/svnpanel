@@ -36,6 +36,7 @@ type SVNConfig struct {
 	RepoRoot            string `toml:"RepoRoot"`
 	PasswdFile          string `toml:"PasswdFile"`
 	AuthzFile           string `toml:"AuthzFile"`
+	SvnserveConfigFile  string `toml:"SvnserveConfigFile"`
 	SvnlookPath         string `toml:"SvnlookPath"`
 	SvnservePath        string `toml:"SvnservePath"`
 	SvnservePort        int    `toml:"SvnservePort"`

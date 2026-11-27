@@ -5,7 +5,7 @@
 ## 功能
 
 - 单管理员登录，会话 Cookie + CSRF 防护
-- 一级“SVN 服务”页面展示 svnserve 版本、端口状态、认证文件和仓库 revision
+- 一级“SVN 服务”页面展示 svnserve 版本、端口状态、认证文件、`svnserve.conf` 一致性和仓库 revision
 - SVN 用户新增、禁用、启用、重置密码、删除和表格内掩码查看
 - 新增用户时可同时加入多个 SVN 分组，并生成 16 位大小写字母+数字随机密码
 - 用户列表支持当前页多选，以及批量启用、停用、重置密码和设置部门
@@ -16,6 +16,7 @@
 - 仓库路径级 ACL：用户、分组、`*`、`$authenticated`、`$anonymous`
 - `r`、`rw`、无权限三种结构化权限和有效权限预览
 - `svnlook` 自动发现仓库、按层读取目录、允许手工补录路径
+- `svnserve.conf` 支持只读查看，并校验 `password-db/authz-db` 是否与面板文件一致
 - revision 冲突保护、精准局部编辑、原子替换、最近 50 组备份
 - 永久按日 JSONL 审计，记录登录、变更和密码查看
 
@@ -99,7 +100,8 @@ GitHub Actions 会构建、冒烟测试镜像，并在 `main` 分支或 `v*` 标
 ## 重要约束
 
 - `passwd` 和 `authz` 是唯一权限真源，系统不建立权限数据库。
-- 面板不会修改 `svnserve.conf`，`svnserve` 也无需因用户或 ACL 变更而重启。
+- Docker 首次启动会生成共享 `svnserve.conf`，已有文件不会覆盖；面板不会修改该文件。
+- `svnserve` 使用 `--config-file` 统一读取共享 `passwd`、`authz`，无需因用户或 ACL 变更而重启。
 - 所有被管理仓库应位于同一个父目录，并共用一组 `passwd`、`authz`。
 - 评论、空行、换行格式、BOM 和未知 authz 语法在未触及区域会保持原样。
 - 配置中的管理员密码是明文，这是本项目明确接受的设计取舍。
