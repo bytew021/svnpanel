@@ -21,8 +21,9 @@ type Revisions struct {
 type RawFileKind string
 
 const (
-	RawFilePasswd RawFileKind = "passwd"
-	RawFileAuthz  RawFileKind = "authz"
+	RawFilePasswd    RawFileKind = "passwd"
+	RawFileAuthz     RawFileKind = "authz"
+	backupTimeLayout             = "20060102T150405.000000000"
 )
 
 func ParseRawFileKind(value string) (RawFileKind, error) {
@@ -42,6 +43,25 @@ type State struct {
 	Revisions Revisions
 	RawPasswd []byte
 	RawAuthz  []byte
+}
+
+type SnapshotFileInfo struct {
+	Exists bool  `json:"exists"`
+	Size   int64 `json:"size"`
+}
+
+type SnapshotInfo struct {
+	ID        string           `json:"id"`
+	CreatedAt string           `json:"createdAt"`
+	Passwd    SnapshotFileInfo `json:"passwd"`
+	Authz     SnapshotFileInfo `json:"authz"`
+}
+
+type SnapshotContent struct {
+	ID        string `json:"id"`
+	CreatedAt string `json:"createdAt"`
+	Passwd    []byte `json:"-"`
+	Authz     []byte `json:"-"`
 }
 
 type Manager struct {
@@ -293,6 +313,144 @@ func (m *Manager) ApplyRaw(
 	return updated, nil
 }
 
+func (m *Manager) ListSnapshots() ([]SnapshotInfo, error) {
+	entries, err := os.ReadDir(m.backupDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []SnapshotInfo{}, nil
+		}
+		return nil, fmt.Errorf("读取备份目录失败: %w", err)
+	}
+	snapshots := make([]SnapshotInfo, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		created, err := time.Parse(backupTimeLayout, entry.Name())
+		if err != nil {
+			continue
+		}
+		passwdPath := filepath.Join(m.backupDir, entry.Name(), "passwd")
+		authzPath := filepath.Join(m.backupDir, entry.Name(), "authz")
+		item := SnapshotInfo{
+			ID: entry.Name(), CreatedAt: created.UTC().Format(time.RFC3339Nano),
+			Passwd: SnapshotFileInfo{},
+			Authz:  SnapshotFileInfo{},
+		}
+		if stat, statErr := os.Stat(passwdPath); statErr == nil && stat.Mode().IsRegular() {
+			item.Passwd = SnapshotFileInfo{Exists: true, Size: stat.Size()}
+		}
+		if stat, statErr := os.Stat(authzPath); statErr == nil && stat.Mode().IsRegular() {
+			item.Authz = SnapshotFileInfo{Exists: true, Size: stat.Size()}
+		}
+		snapshots = append(snapshots, item)
+	}
+	sort.Slice(snapshots, func(i, j int) bool { return snapshots[i].ID > snapshots[j].ID })
+	return snapshots, nil
+}
+
+func (m *Manager) ReadSnapshot(id string) (*SnapshotContent, error) {
+	if err := validateSnapshotID(id); err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(m.backupDir, id)
+	passwdData, err := os.ReadFile(filepath.Join(dir, "passwd"))
+	if err != nil {
+		return nil, fmt.Errorf("读取快照 passwd 失败: %w", err)
+	}
+	authzData, err := os.ReadFile(filepath.Join(dir, "authz"))
+	if err != nil {
+		return nil, fmt.Errorf("读取快照 authz 失败: %w", err)
+	}
+	if _, err := parseState(passwdData, authzData); err != nil {
+		return nil, fmt.Errorf("快照内容校验失败: %w", err)
+	}
+	created, _ := time.Parse(backupTimeLayout, id)
+	return &SnapshotContent{
+		ID: id, CreatedAt: created.UTC().Format(time.RFC3339Nano),
+		Passwd: passwdData, Authz: authzData,
+	}, nil
+}
+
+func (m *Manager) RestoreSnapshot(
+	ctx context.Context,
+	id string,
+	expected Revisions,
+	afterWrite func(preRestoreBackup string) error,
+) (*State, error) {
+	if err := validateSnapshotID(id); err != nil {
+		return nil, err
+	}
+	if err := m.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer m.unlock()
+
+	passwdData, err := os.ReadFile(m.passwdPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取 passwd 失败: %w", err)
+	}
+	authzData, err := os.ReadFile(m.authzPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取 authz 失败: %w", err)
+	}
+	currentRevisions := Revisions{Passwd: Revision(passwdData), Authz: Revision(authzData)}
+	if expected != currentRevisions {
+		return nil, fmt.Errorf("%w: 期望 %+v，当前 %+v", ErrConflict, expected, currentRevisions)
+	}
+	snapshot, err := m.ReadSnapshot(id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := parseState(snapshot.Passwd, snapshot.Authz); err != nil {
+		return nil, err
+	}
+	passwdInfo, err := os.Stat(m.passwdPath)
+	if err != nil {
+		return nil, err
+	}
+	authzInfo, err := os.Stat(m.authzPath)
+	if err != nil {
+		return nil, err
+	}
+	preRestoreBackup, err := m.createBackup(passwdData, authzData)
+	if err != nil {
+		return nil, err
+	}
+	rollback := func() {
+		_ = writeAtomic(m.passwdPath, passwdData, passwdInfo.Mode().Perm())
+		_ = writeAtomic(m.authzPath, authzData, authzInfo.Mode().Perm())
+	}
+	if err := writeAtomic(m.passwdPath, snapshot.Passwd, passwdInfo.Mode().Perm()); err != nil {
+		rollback()
+		return nil, fmt.Errorf("恢复快照 passwd 失败: %w", err)
+	}
+	if err := writeAtomic(m.authzPath, snapshot.Authz, authzInfo.Mode().Perm()); err != nil {
+		rollback()
+		return nil, fmt.Errorf("恢复快照 authz 失败: %w", err)
+	}
+	if afterWrite != nil {
+		if err := afterWrite(preRestoreBackup); err != nil {
+			rollback()
+			return nil, fmt.Errorf("发布后审计失败，已回滚: %w", err)
+		}
+	}
+	m.pruneBackups()
+	updated, err := parseState(snapshot.Passwd, snapshot.Authz)
+	if err != nil {
+		rollback()
+		return nil, err
+	}
+	return updated, nil
+}
+
+func validateSnapshotID(id string) error {
+	if _, err := time.Parse(backupTimeLayout, id); err != nil || filepath.Base(id) != id {
+		return fmt.Errorf("%w: 无效的快照 %s", ErrValidation, id)
+	}
+	return nil
+}
+
 func (m *Manager) lock(ctx context.Context) error {
 	m.mu.Lock()
 	if _, err := m.fileLock.TryLockContext(ctx, 100*time.Millisecond); err != nil {
@@ -311,7 +469,7 @@ func (m *Manager) createBackup(passwdData, authzData []byte) (string, error) {
 	if err := os.MkdirAll(m.backupDir, 0o700); err != nil {
 		return "", err
 	}
-	name := time.Now().UTC().Format("20060102T150405.000000000")
+	name := time.Now().UTC().Format(backupTimeLayout)
 	dir := filepath.Join(m.backupDir, name)
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		return "", err
@@ -335,7 +493,7 @@ func (m *Manager) pruneBackups() {
 	var dirs []string
 	for _, entry := range entries {
 		if entry.IsDir() {
-			if _, err := time.Parse("20060102T150405.000000000", entry.Name()); err != nil {
+			if _, err := time.Parse(backupTimeLayout, entry.Name()); err != nil {
 				continue
 			}
 			dirs = append(dirs, entry.Name())

@@ -133,6 +133,83 @@ func TestManagerRawApplyValidatesAndCreatesBackup(t *testing.T) {
 	}
 }
 
+func TestManagerSnapshotReadAndRestore(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	passwdPath := filepath.Join(dir, "passwd")
+	authzPath := filepath.Join(dir, "authz")
+	originalPasswd := []byte("# initial\nalice = old-password\n")
+	originalAuthz := []byte("[groups]\nqa = alice\n")
+	if err := os.WriteFile(passwdPath, originalPasswd, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(authzPath, originalAuthz, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(passwdPath, authzPath, filepath.Join(dir, "backups"), 20)
+	state, err := manager.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := manager.ApplyRaw(
+		context.Background(), RawFilePasswd, state.Revisions,
+		[]byte("# changed\nbob = new-password\n"), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := manager.ListSnapshots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) == 0 {
+		t.Fatal("snapshot list is empty")
+	}
+	snapshot, err := manager.ReadSnapshot(snapshots[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(snapshot.Passwd) != string(originalPasswd) {
+		t.Fatalf("unexpected snapshot passwd: %q", snapshot.Passwd)
+	}
+	var preRestoreBackup string
+	restored, err := manager.RestoreSnapshot(
+		context.Background(), snapshot.ID, updated.Revisions,
+		func(backup string) error {
+			preRestoreBackup = backup
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preRestoreBackup == "" {
+		t.Fatal("pre-restore backup was not created")
+	}
+	if restored.Revisions == updated.Revisions {
+		t.Fatal("restore revision did not change")
+	}
+	gotPasswd, err := os.ReadFile(passwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotAuthz, err := os.ReadFile(authzPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotPasswd) != string(originalPasswd) || string(gotAuthz) != string(originalAuthz) {
+		t.Fatalf("snapshot was not restored: passwd=%q authz=%q", gotPasswd, gotAuthz)
+	}
+	if _, err := manager.RestoreSnapshot(
+		context.Background(), snapshot.ID, updated.Revisions, nil,
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected stale restore conflict, got %v", err)
+	}
+	if _, err := manager.ReadSnapshot("../escape"); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected invalid snapshot id, got %v", err)
+	}
+}
+
 func TestManagerPrunesOldBackups(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

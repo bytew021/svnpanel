@@ -169,6 +169,42 @@ func TestUserGroupACLFlow(t *testing.T) {
 		t.Fatal("raw authz update was not persisted")
 	}
 
+	snapshotsResponse := api.do(http.MethodGet, "/api/v1/snapshots", nil, true, false)
+	var snapshots struct {
+		Data struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	decode(t, snapshotsResponse, &snapshots)
+	if len(snapshots.Data.Items) == 0 {
+		t.Fatal("snapshot list is empty")
+	}
+	snapshotID := snapshots.Data.Items[0].ID
+	snapshotResponse := api.do(
+		http.MethodGet, "/api/v1/snapshots/"+url.PathEscape(snapshotID), nil, true, false,
+	)
+	var snapshotContent struct {
+		Data struct {
+			Authz struct {
+				Content string `json:"content"`
+			} `json:"authz"`
+		} `json:"data"`
+	}
+	decode(t, snapshotResponse, &snapshotContent)
+	if strings.Contains(snapshotContent.Data.Authz.Content, "# raw editor comment") {
+		t.Fatal("snapshot contains post-edit content")
+	}
+	restoreResponse := api.do(
+		http.MethodPost, "/api/v1/snapshots/"+url.PathEscape(snapshotID)+"/restore",
+		map[string]any{"passwd": api.revs.Passwd, "authz": api.revs.Authz}, true, true,
+	)
+	if restoreResponse.Code != http.StatusOK {
+		t.Fatalf("snapshot restore failed: %d %s", restoreResponse.Code, restoreResponse.Body.String())
+	}
+	api.readRevisions(restoreResponse, true)
+
 	addedDepartment := api.do(http.MethodPost, "/api/v1/departments", map[string]any{
 		"passwd": api.revs.Passwd, "authz": api.revs.Authz, "name": "部门C",
 	}, true, true)

@@ -27,6 +27,17 @@ type RawFilesResponse struct {
 	Revisions svncfg.Revisions `json:"revisions"`
 }
 
+type SnapshotsResponse struct {
+	Items []svncfg.SnapshotInfo `json:"items"`
+}
+
+type SnapshotContent struct {
+	ID        string  `json:"id"`
+	CreatedAt string  `json:"createdAt"`
+	Passwd    RawFile `json:"passwd"`
+	Authz     RawFile `json:"authz"`
+}
+
 type SvnserveFileInfo struct {
 	Path       string `json:"path"`
 	Exists     bool   `json:"exists"`

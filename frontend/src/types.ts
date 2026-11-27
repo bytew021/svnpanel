@@ -30,6 +30,25 @@ export interface RawFilesResponse {
   revisions: Revisions;
 }
 
+export interface SnapshotFileInfo {
+  exists: boolean;
+  size: number;
+}
+
+export interface SnapshotInfo {
+  id: string;
+  createdAt: string;
+  passwd: SnapshotFileInfo;
+  authz: SnapshotFileInfo;
+}
+
+export interface SnapshotContent {
+  id: string;
+  createdAt: string;
+  passwd: RawFile;
+  authz: RawFile;
+}
+
 export interface SvnserveFileInfo {
   path: string;
   exists: boolean;

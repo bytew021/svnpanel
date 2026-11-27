@@ -13,5 +13,8 @@ app.use(createPinia());
 app.use(router);
 app.use(VxeUI);
 app.use(VxeUITable);
-VxeUI.setConfig({ select: { transfer: true } });
+VxeUI.setConfig({
+  select: { transfer: true },
+  modal: { position: { top: 100 } },
+});
 app.mount("#app");

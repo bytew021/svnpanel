@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import BaseDialog from "@/components/BaseDialog.vue";
 import TablePager from "@/components/TablePager.vue";
 import { useTableMaxHeight } from "@/composables/useTableMaxHeight";
 import { errorMessage, listAudits, type AuditEvent } from "@/api/client";
@@ -10,6 +9,7 @@ const events = ref<AuditEvent[]>([]);
 const total = ref(0);
 const loading = ref(false);
 const selected = ref<AuditEvent>();
+const detailOpen = ref(false);
 const { tableMaxHeight } = useTableMaxHeight(250);
 const filters = reactive({
   from: "",
@@ -39,6 +39,7 @@ const actionLabels: Record<string, string> = {
   "department.delete": "删除部门",
   "file.passwd.update": "编辑 passwd 文件",
   "file.authz.update": "编辑 authz 文件",
+  "file.snapshot.restore": "恢复配置快照",
   "group.create": "新增分组",
   "group.members.update": "更新分组成员",
   "group.delete": "删除分组",
@@ -72,6 +73,20 @@ function search() {
   void load();
 }
 
+function resetFilters() {
+  filters.from = "";
+  filters.to = "";
+  filters.action = "";
+  filters.outcome = "";
+  filters.keyword = "";
+  void search();
+}
+
+function openDetail(event: AuditEvent) {
+  selected.value = event;
+  detailOpen.value = true;
+}
+
 function setPage(page: number) {
   filters.page = page;
   void load();
@@ -93,20 +108,45 @@ onMounted(load);
 <template>
   <section class="card overflow-hidden">
     <header class="border-b border-slate-100 p-5">
-      <div class="grid grid-cols-[10rem_10rem_11rem_8rem_minmax(14rem,1fr)_auto] gap-2">
-        <input v-model="filters.from" type="date" class="input" />
-        <input v-model="filters.to" type="date" class="input" />
-        <select v-model="filters.action" class="input">
-          <option value="">全部操作</option>
-          <option v-for="(label, value) in actionLabels" :key="value" :value="value">{{ label }}</option>
-        </select>
-        <select v-model="filters.outcome" class="input">
-          <option value="">全部结果</option>
-          <option value="success">成功</option>
-          <option value="failure">失败</option>
-        </select>
-        <input v-model="filters.keyword" class="input" placeholder="搜索用户、仓库、路径或错误信息" @keyup.enter="search" />
-        <button class="btn btn-primary" @click="search">查询</button>
+      <div class="flex flex-wrap items-center gap-2">
+        <vxe-date-picker
+          v-model="filters.from"
+          type="date"
+          value-format="yyyy-MM-dd"
+          placeholder="开始日期"
+          :max-date="filters.to || undefined"
+          :transfer="true"
+          style="width: 10rem"
+        />
+        <vxe-date-picker
+          v-model="filters.to"
+          type="date"
+          value-format="yyyy-MM-dd"
+          placeholder="结束日期"
+          :min-date="filters.from || undefined"
+          :transfer="true"
+          style="width: 10rem"
+        />
+        <vxe-select v-model="filters.action" placeholder="全部操作" filterable style="width: 250px">
+          <vxe-option value="" label="全部操作" />
+          <vxe-option v-for="(label, value) in actionLabels" :key="value" :value="value" :label="label" />
+        </vxe-select>
+        <vxe-select v-model="filters.outcome" placeholder="全部结果" style="width: 8rem">
+          <vxe-option value="" label="全部结果" />
+          <vxe-option value="success" label="成功" />
+          <vxe-option value="failure" label="失败" />
+        </vxe-select>
+        <vxe-input
+          v-model="filters.keyword"
+          placeholder="搜索用户、仓库、路径或错误信息"
+          clearable
+          class="min-w-[16rem] flex-1"
+          @keyup.enter="search"
+        />
+        <div class="ml-auto flex shrink-0 gap-2">
+          <vxe-button status="primary" content="查询" @click="search" />
+          <vxe-button content="重置" @click="resetFilters" />
+        </div>
       </div>
     </header>
 
@@ -120,9 +160,10 @@ onMounted(load);
       auto-resize
       :virtual-x-config="{ enabled: true, gt: 8 }"
       :virtual-y-config="{ enabled: true, gt: 20, oSize: 8 }"
-      :row-config="{ isHover: true, height: 44 }"
+      :row-config="{ isHover: true }"
+      :cell-config="{ height: 44 }"
       :column-config="{ resizable: true }"
-      @cell-click="({ row }) => (selected = row)"
+      @cell-click="({ row }) => openDetail(row)"
     >
       <vxe-column field="timestamp" title="时间" width="160">
         <template #default="{ row }">{{ formatTime(row.timestamp) }}</template>
@@ -157,7 +198,18 @@ onMounted(load);
     />
   </section>
 
-  <BaseDialog :open="Boolean(selected)" title="审计事件详情" wide @close="selected = undefined">
-    <pre v-if="selected" class="max-h-[65vh] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-5 font-mono text-xs leading-6 text-slate-200">{{ JSON.stringify(selected, null, 2) }}</pre>
-  </BaseDialog>
+  <vxe-modal
+    v-model="detailOpen"
+    title="审计事件详情"
+    :position="{ top: 100 }"
+    width="min(56rem, calc(100vw - 3rem))"
+    height="min(42rem, calc(100vh - 8rem))"
+    resize
+    show-footer
+  >
+    <pre v-if="selected" class="h-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-5 font-mono text-xs leading-6 text-slate-200">{{ JSON.stringify(selected, null, 2) }}</pre>
+    <template #footer>
+      <vxe-button @click="detailOpen = false">关闭</vxe-button>
+    </template>
+  </vxe-modal>
 </template>

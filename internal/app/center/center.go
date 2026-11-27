@@ -51,6 +51,9 @@ func Config(r *gin.Engine, svc *service.Service) {
 
 	protected.GET("/files", listRawFiles(svc))
 	protected.PUT("/files/:name", requireCSRF(), updateRawFile(svc))
+	protected.GET("/snapshots", listSnapshots(svc))
+	protected.GET("/snapshots/:id", getSnapshot(svc))
+	protected.POST("/snapshots/:id/restore", requireCSRF(), restoreSnapshot(svc))
 
 	protected.GET("/groups", listGroups(svc))
 	protected.POST("/groups", requireCSRF(), createGroup(svc))

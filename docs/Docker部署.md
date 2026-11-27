@@ -14,7 +14,7 @@
 | `/srv/svn/repos` | 所有 SVN 仓库 |
 | `/srv/svn/etc` | 共享的 `passwd`、`authz` |
 | `/var/lib/svnpanel/audit` | 永久审计日志 |
-| `/var/lib/svnpanel/backups` | 配置变更备份 |
+| `/var/lib/svnpanel/backups` | 配置变更备份和可网页还原的历史快照 |
 
 必须持久化 `/srv/svn` 和 `/var/lib/svnpanel`。如果使用宿主机绑定目录，请确保 UID/GID `1000` 可以读写。
 

@@ -13,6 +13,8 @@ import type {
   RawFilesResponse,
   Revisions,
   Repository,
+  SnapshotContent,
+  SnapshotInfo,
   SvnserveInfo,
   UsersResponse,
 } from "@/types";
@@ -101,6 +103,26 @@ export async function updateRawFile(name: RawFileName, revisions: Revisions, con
     ...revisions,
     content,
   });
+  return data.data;
+}
+
+export async function listSnapshots() {
+  const { data } = await api.get<{ data: { items: SnapshotInfo[] } }>("/snapshots");
+  return data.data.items;
+}
+
+export async function getSnapshot(id: string) {
+  const { data } = await api.get<{ data: SnapshotContent }>(
+    `/snapshots/${encodeURIComponent(id)}`,
+  );
+  return data.data;
+}
+
+export async function restoreSnapshot(revisions: Revisions, id: string) {
+  const { data } = await api.post<{ data: OperationResult }>(
+    `/snapshots/${encodeURIComponent(id)}/restore`,
+    revisions,
+  );
   return data.data;
 }
 

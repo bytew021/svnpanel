@@ -114,14 +114,20 @@ func (s *Service) ListUsers() (dto.UsersResponse, error) {
 	if err != nil {
 		return dto.UsersResponse{}, err
 	}
-	items := make([]dto.User, 0, len(state.Passwd.Users))
+	orderedUsers := make([]svncfg.PasswdUser, 0, len(state.Passwd.Users))
 	for _, user := range state.Passwd.Users {
+		orderedUsers = append(orderedUsers, user)
+	}
+	sort.Slice(orderedUsers, func(i, j int) bool {
+		return orderedUsers[i].Line < orderedUsers[j].Line
+	})
+	items := make([]dto.User, 0, len(orderedUsers))
+	for _, user := range orderedUsers {
 		items = append(items, dto.User{
 			Name: user.Name, Disabled: user.Disabled, Encoding: user.Encoding,
 			Remark: user.Remark, Department: user.Department,
 		})
 	}
-	sortUsers(items)
 	return dto.UsersResponse{
 		Items: items, Revisions: state.Revisions,
 		Departments: append([]string(nil), state.Passwd.Departments...),
@@ -301,6 +307,51 @@ func (s *Service) UpdateRawFile(
 		return dto.OperationResult{}, err
 	}
 	return dto.OperationResult{Revisions: state.Revisions, Message: "原生文件已保存"}, nil
+}
+
+func (s *Service) ListSnapshots() (dto.SnapshotsResponse, error) {
+	items, err := s.Manager.ListSnapshots()
+	if err != nil {
+		return dto.SnapshotsResponse{}, err
+	}
+	return dto.SnapshotsResponse{Items: items}, nil
+}
+
+func (s *Service) GetSnapshot(id string) (dto.SnapshotContent, error) {
+	snapshot, err := s.Manager.ReadSnapshot(id)
+	if err != nil {
+		return dto.SnapshotContent{}, err
+	}
+	return dto.SnapshotContent{
+		ID: snapshot.ID, CreatedAt: snapshot.CreatedAt,
+		Passwd: dto.RawFile{
+			Content: string(snapshot.Passwd), Revision: svncfg.Revision(snapshot.Passwd),
+		},
+		Authz: dto.RawFile{
+			Content: string(snapshot.Authz), Revision: svncfg.Revision(snapshot.Authz),
+		},
+	}, nil
+}
+
+func (s *Service) RestoreSnapshot(
+	revisions svncfg.Revisions,
+	id, clientIP string,
+) (dto.OperationResult, error) {
+	ctx, cancel := s.operationContext()
+	defer cancel()
+	state, err := s.Manager.RestoreSnapshot(ctx, id, revisions,
+		func(preRestoreBackup string) error {
+			return s.Audit.Append(audit.Event{
+				Actor: s.Config.Admin.Username, Action: "file.snapshot.restore", Outcome: "success",
+				Target: id, ClientIP: clientIP,
+				Details: map[string]any{"preRestoreBackup": preRestoreBackup},
+			})
+		})
+	if err != nil {
+		s.auditFailure("file.snapshot.restore", id, clientIP, err)
+		return dto.OperationResult{}, err
+	}
+	return dto.OperationResult{Revisions: state.Revisions, Message: "配置快照已恢复"}, nil
 }
 
 func (s *Service) SetUserDisabled(revisions svncfg.Revisions, name string, disabled bool, clientIP string) (dto.OperationResult, error) {
@@ -547,7 +598,6 @@ func (s *Service) ListGroups() (dto.GroupsResponse, error) {
 			Permissions: state.Authz.GroupPermissions(group.Name),
 		})
 	}
-	sort.Slice(items, func(i, j int) bool { return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name) })
 	return dto.GroupsResponse{Items: items, Revisions: state.Revisions}, nil
 }
 
@@ -797,14 +847,4 @@ func (s *Service) auditFailureAs(actor, action, target, clientIP string, err err
 		Actor: actor, Action: action, Outcome: "failure",
 		Target: target, ClientIP: clientIP, Message: message,
 	})
-}
-
-func sortUsers(users []dto.User) {
-	for i := 0; i < len(users); i++ {
-		for j := i + 1; j < len(users); j++ {
-			if strings.ToLower(users[j].Name) < strings.ToLower(users[i].Name) {
-				users[i], users[j] = users[j], users[i]
-			}
-		}
-	}
 }

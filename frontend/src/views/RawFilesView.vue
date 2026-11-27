@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import * as monaco from "monaco-editor/editor/editor.api.js";
 import "monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js";
@@ -10,8 +10,15 @@ import "monaco-editor/editor/contrib/folding/browser/folding.js";
 import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations.js";
 import "monaco-editor/editor/contrib/wordHighlighter/browser/wordHighlighter.js";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
-import { errorMessage, getRawFiles, updateRawFile } from "@/api/client";
-import type { RawFileName, Revisions } from "@/types";
+import {
+  errorMessage,
+  getRawFiles,
+  getSnapshot,
+  listSnapshots,
+  restoreSnapshot,
+  updateRawFile,
+} from "@/api/client";
+import type { RawFileName, Revisions, SnapshotContent, SnapshotInfo } from "@/types";
 import { confirmAction, failure, success } from "@/utils/notify";
 
 interface EditableFile {
@@ -101,10 +108,22 @@ const revisions = ref<Revisions>({ passwd: "", authz: "" });
 const loading = ref(false);
 const saving = ref(false);
 const editorHost = ref<HTMLElement>();
+const snapshotDialogOpen = ref(false);
+const snapshotLoading = ref(false);
+const snapshotContentLoading = ref(false);
+const snapshotRestoring = ref(false);
+const snapshots = ref<SnapshotInfo[]>([]);
+const selectedSnapshotID = ref("");
+const snapshotContent = ref<SnapshotContent>();
+const snapshotFile = ref<RawFileName>("passwd");
+const snapshotDiffHost = ref<HTMLElement>();
 const cursor = reactive({ line: 1, column: 1 });
 const models = new Map<RawFileName, monaco.editor.ITextModel>();
 const viewStates = new Map<RawFileName, monaco.editor.ICodeEditorViewState | null>();
 let editor: monaco.editor.IStandaloneCodeEditor | undefined;
+let snapshotDiffEditor: monaco.editor.IStandaloneDiffEditor | undefined;
+let snapshotOriginalModel: monaco.editor.ITextModel | undefined;
+let snapshotModifiedModel: monaco.editor.ITextModel | undefined;
 let syncing = false;
 
 const dirtyFiles = computed(() =>
@@ -242,6 +261,139 @@ async function save() {
   }
 }
 
+function formatSnapshotTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatBytes(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function disposeSnapshotDiff() {
+  snapshotDiffEditor?.setModel(null);
+  snapshotDiffEditor?.dispose();
+  snapshotDiffEditor = undefined;
+  snapshotOriginalModel?.dispose();
+  snapshotOriginalModel = undefined;
+  snapshotModifiedModel?.dispose();
+  snapshotModifiedModel = undefined;
+}
+
+function renderSnapshotDiff() {
+  if (!snapshotDiffHost.value || !snapshotContent.value) return;
+  if (!snapshotDiffEditor) {
+    snapshotDiffEditor = monaco.editor.createDiffEditor(snapshotDiffHost.value, {
+      theme: "svnpanel-raw",
+      automaticLayout: true,
+      readOnly: true,
+      originalEditable: false,
+      renderSideBySide: true,
+      enableSplitViewResizing: true,
+      minimap: { enabled: false },
+      fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, monospace',
+      fontSize: 13,
+      lineHeight: 22,
+      scrollBeyondLastLine: false,
+      renderWhitespace: "selection",
+      padding: { top: 12, bottom: 12 },
+    });
+  }
+  snapshotDiffEditor.setModel(null);
+  snapshotOriginalModel?.dispose();
+  snapshotModifiedModel?.dispose();
+  const name = snapshotFile.value;
+  const snapshotRevision = snapshotContent.value[name].revision.slice(0, 10);
+  snapshotOriginalModel = monaco.editor.createModel(
+    snapshotContent.value[name].content,
+    languageId,
+    monaco.Uri.parse(`inmemory://snapshot/${snapshotContent.value.id}/${name}-${snapshotRevision}`),
+  );
+  snapshotModifiedModel = monaco.editor.createModel(
+    files[name].content,
+    languageId,
+    monaco.Uri.parse(`inmemory://snapshot-current/${name}-${Date.now()}`),
+  );
+  snapshotDiffEditor.setModel({
+    original: snapshotOriginalModel,
+    modified: snapshotModifiedModel,
+  });
+}
+
+async function selectSnapshot(id: string) {
+  selectedSnapshotID.value = id;
+  snapshotContentLoading.value = true;
+  try {
+    snapshotContent.value = await getSnapshot(id);
+    await nextTick();
+    renderSnapshotDiff();
+  } catch (error) {
+    failure(errorMessage(error));
+  } finally {
+    snapshotContentLoading.value = false;
+  }
+}
+
+async function loadSnapshots() {
+  snapshotLoading.value = true;
+  try {
+    snapshots.value = await listSnapshots();
+    if (!snapshots.value.length) {
+      selectedSnapshotID.value = "";
+      snapshotContent.value = undefined;
+      disposeSnapshotDiff();
+      return;
+    }
+    const current = snapshots.value.find((item) => item.id === selectedSnapshotID.value);
+    await selectSnapshot(current?.id ?? snapshots.value[0].id);
+  } catch (error) {
+    failure(errorMessage(error));
+  } finally {
+    snapshotLoading.value = false;
+  }
+}
+
+async function openSnapshots() {
+  snapshotDialogOpen.value = true;
+  await nextTick();
+  await loadSnapshots();
+}
+
+async function switchSnapshotFile(name: RawFileName) {
+  snapshotFile.value = name;
+  await nextTick();
+  renderSnapshotDiff();
+}
+
+async function restoreSelectedSnapshot() {
+  if (!selectedSnapshotID.value || !snapshotContent.value) return;
+  const confirmed = await confirmAction(
+    `恢复快照 ${formatSnapshotTime(snapshotContent.value.createdAt)}？`,
+    `将同时把 passwd 和 authz 恢复到此快照。当前配置会先自动备份；${
+      hasDirty.value ? "编辑器中的未保存修改会丢失。" : "恢复后页面会自动重新加载。"
+    }`,
+    true,
+  );
+  if (!confirmed) return;
+  snapshotRestoring.value = true;
+  try {
+    const result = await restoreSnapshot(revisions.value, selectedSnapshotID.value);
+    revisions.value = result.revisions;
+    snapshotDialogOpen.value = false;
+    success("配置快照已恢复");
+    await load();
+  } catch (error) {
+    failure(errorMessage(error));
+    await loadSnapshots();
+  } finally {
+    snapshotRestoring.value = false;
+  }
+}
+
 function beforeUnload(event: BeforeUnloadEvent) {
   if (!hasDirty.value) return;
   event.preventDefault();
@@ -253,12 +405,17 @@ onBeforeRouteLeave(async () => {
   return confirmAction("离开原生文件编辑页？", "当前存在未保存的修改，离开后会丢失。", true);
 });
 
+watch(snapshotDialogOpen, (open) => {
+  if (!open) disposeSnapshotDiff();
+});
+
 onMounted(() => {
   void load();
   window.addEventListener("beforeunload", beforeUnload);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
+  disposeSnapshotDiff();
   editor?.dispose();
   for (const model of models.values()) model.dispose();
   models.clear();
@@ -278,6 +435,9 @@ onBeforeUnmount(() => {
           </div>
           <div class="flex items-center gap-2">
             <span v-if="hasDirty" class="badge badge-amber">有未保存修改</span>
+            <button class="btn btn-secondary" :disabled="loading || saving" @click="openSnapshots">
+              历史快照
+            </button>
             <button class="btn btn-secondary" :disabled="loading || saving" @click="reload">
               重新加载
             </button>
@@ -321,5 +481,87 @@ onBeforeUnmount(() => {
     <section class="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-900">
       原生编辑会绕过用户、分组和权限表单。保存时服务端仍会解析 passwd/authz，但不会自动修复人工输入的结构错误。其他浏览器已修改文件时会返回 409 冲突，请先重新加载。
     </section>
+
+    <vxe-modal
+      v-model="snapshotDialogOpen"
+      title="配置历史快照"
+      :position="{ top: 100 }"
+      width="min(76rem, calc(100vw - 3rem))"
+      height="min(46rem, calc(100vh - 8rem))"
+      resize
+      show-footer
+    >
+      <div class="flex h-[min(34rem,calc(100vh-16rem))] min-h-[24rem] overflow-hidden rounded-lg border border-slate-200">
+        <aside class="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-slate-50">
+          <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <div>
+              <div class="text-sm font-bold text-slate-800">最近快照</div>
+              <div class="mt-0.5 text-[11px] text-slate-500">{{ snapshots.length }} 个可用备份</div>
+            </div>
+            <vxe-button size="mini" :loading="snapshotLoading" content="刷新" @click="loadSnapshots" />
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto p-2">
+            <div v-if="!snapshots.length && !snapshotLoading" class="empty text-sm">暂无历史快照</div>
+            <button
+              v-for="item in snapshots"
+              :key="item.id"
+              class="mb-1 w-full rounded-lg border px-3 py-3 text-left transition"
+              :class="selectedSnapshotID === item.id ? 'border-blue-300 bg-blue-50' : 'border-transparent hover:border-slate-200 hover:bg-white'"
+              @click="selectSnapshot(item.id)"
+            >
+              <div class="text-xs font-semibold text-slate-800">{{ formatSnapshotTime(item.createdAt) }}</div>
+              <div class="mt-2 flex gap-3 font-mono text-[10px] text-slate-500">
+                <span>passwd {{ item.passwd.exists ? formatBytes(item.passwd.size) : "缺失" }}</span>
+                <span>authz {{ item.authz.exists ? formatBytes(item.authz.size) : "缺失" }}</span>
+              </div>
+            </button>
+          </div>
+        </aside>
+
+        <section class="flex min-w-0 flex-1 flex-col bg-white">
+          <header class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+            <div class="inline-flex rounded-md bg-slate-100 p-1">
+              <button
+                v-for="name in fileNames"
+                :key="name"
+                class="rounded px-4 py-1.5 font-mono text-xs font-semibold"
+                :class="snapshotFile === name ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'"
+                @click="switchSnapshotFile(name)"
+              >
+                {{ name }}
+              </button>
+            </div>
+            <div class="flex items-center gap-3 text-xs text-slate-500">
+              <span>左侧：快照 · 右侧：当前草稿</span>
+              <vxe-button
+                status="warning"
+                content="恢复此快照"
+                :loading="snapshotRestoring"
+                :disabled="!snapshotContent || !snapshotContent[snapshotFile].revision"
+                @click="restoreSelectedSnapshot"
+              />
+            </div>
+          </header>
+          <div class="relative min-h-0 flex-1">
+            <div ref="snapshotDiffHost" class="h-full w-full" />
+            <div
+              v-if="snapshotContentLoading"
+              class="absolute inset-0 grid place-items-center bg-slate-950/70 text-sm text-slate-100"
+            >
+              正在读取快照…
+            </div>
+            <div v-if="!snapshotContent && !snapshotContentLoading" class="grid h-full place-items-center text-sm text-slate-500">
+              选择一个快照查看差异
+            </div>
+          </div>
+          <footer class="shrink-0 border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
+            快照恢复会整组还原 passwd 和 authz，并在还原前自动备份当前配置。
+          </footer>
+        </section>
+      </div>
+      <template #footer>
+        <vxe-button @click="snapshotDialogOpen = false">关闭</vxe-button>
+      </template>
+    </vxe-modal>
   </div>
 </template>
