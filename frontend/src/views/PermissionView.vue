@@ -260,8 +260,8 @@ onMounted(bootstrap);
 </script>
 
 <template>
-  <div class="space-y-4">
-    <section class="card flex flex-wrap items-center gap-3 px-4 py-3">
+  <div class="flex h-full min-h-0 flex-col gap-4">
+    <section class="card flex shrink-0 flex-wrap items-center gap-3 px-4 py-3">
       <div>
         <div class="text-sm font-bold text-slate-800">路径权限</div>
         <div class="mt-1 text-xs text-slate-500">选择仓库和目录后，管理用户、分组及内置身份的访问权限</div>
@@ -275,7 +275,7 @@ onMounted(bootstrap);
       </div>
     </section>
 
-    <section class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+    <section class="shrink-0 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
       SVN 权限会从当前目录向父目录查找最近规则；子目录没有单独配置时，会继承父目录权限。
     </section>
 
@@ -283,8 +283,8 @@ onMounted(bootstrap);
       仓库根目录下未发现可管理的 SVN 仓库
     </div>
 
-    <div v-else class="grid grid-cols-[19rem_minmax(0,1fr)] gap-4">
-      <section class="card flex min-h-[520px] flex-col overflow-hidden">
+    <div v-else class="grid min-h-0 flex-1 grid-cols-[19rem_minmax(0,1fr)] gap-4">
+      <section class="card flex min-h-0 flex-col overflow-hidden">
         <header class="border-b border-slate-100 px-4 py-3">
           <div class="mb-2 flex items-center gap-2">
             <vxe-button size="small" :disabled="currentPath === '/'" @click="navigate(parentPath())">返回</vxe-button>
@@ -298,7 +298,7 @@ onMounted(bootstrap);
             <button class="btn btn-secondary px-2 py-1.5">跳转</button>
           </form>
         </header>
-        <div class="flex-1 overflow-auto p-2">
+        <div class="permission-directory-scroll min-h-0 flex-1 overflow-y-auto p-2">
           <div v-if="pathLoading" class="empty text-sm">正在读取目录…</div>
           <button
             v-for="node in paths"
@@ -313,7 +313,7 @@ onMounted(bootstrap);
         </div>
       </section>
 
-      <div class="space-y-4">
+      <div class="permission-detail-scroll min-h-0 space-y-4 overflow-y-auto pr-1">
         <section class="card overflow-hidden">
           <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
             <div>
@@ -451,3 +451,31 @@ onMounted(bootstrap);
     </BaseDialog>
   </div>
 </template>
+
+<style scoped>
+.permission-directory-scroll,
+.permission-detail-scroll {
+  overscroll-behavior: contain;
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.permission-directory-scroll::-webkit-scrollbar,
+.permission-detail-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.permission-directory-scroll::-webkit-scrollbar-thumb,
+.permission-detail-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #cbd5e1;
+  background-clip: padding-box;
+}
+
+.permission-directory-scroll::-webkit-scrollbar-track,
+.permission-detail-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+</style>

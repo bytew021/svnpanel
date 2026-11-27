@@ -298,36 +298,50 @@ onMounted(load);
       <div
         v-for="(item, index) in permissionDialog.items"
         :key="index"
-        class="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 p-2"
+        class="space-y-2 rounded-md bg-slate-50 p-2"
       >
-        <button
-          class="grid h-9 w-9 place-items-center rounded border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100"
-          title="删除此路径权限"
-          @click="removePermission(index)"
-        >
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5" />
-          </svg>
-        </button>
-        <select v-if="repositories.length > 1" v-model="item.repo" class="input w-40">
-          <option v-for="repo in repositories" :key="repo.name" :value="repo.name">{{ repo.name }}</option>
-        </select>
-        <div class="flex min-w-52 flex-1 overflow-hidden rounded-md border border-slate-300 bg-white">
-          <input v-model="item.path" class="min-w-0 flex-1 px-3 py-2 font-mono text-sm outline-none" placeholder="/path/to/directory" />
-          <button class="border-l border-slate-300 bg-slate-50 px-4 text-sm text-slate-600 hover:bg-slate-100" @click="openPathPicker(item, index)">
-            修改
-          </button>
-        </div>
-        <div class="inline-flex overflow-hidden rounded-md border border-blue-500">
+        <div class="flex flex-wrap items-center gap-2">
           <button
-            v-for="option in [{ value: 'write', label: '读写' }, { value: 'read', label: '只读' }, { value: 'none', label: '无权限' }]"
-            :key="option.value"
-            class="px-3 py-1.5 text-sm"
-            :class="item.permission === option.value ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-blue-50'"
-            @click="item.permission = option.value as Permission"
+            class="grid h-9 w-9 place-items-center rounded border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100"
+            title="删除此路径权限"
+            @click="removePermission(index)"
           >
-            {{ option.label }}
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5" />
+            </svg>
           </button>
+          <vxe-select
+            v-if="repositories.length > 1"
+            v-model="item.repo"
+            class="permission-repository-select min-w-0 flex-1"
+            placeholder="选择仓库"
+          >
+            <vxe-option
+              v-if="item.repo && !repositories.some((repo) => repo.name === item.repo)"
+              :value="item.repo"
+              :label="`${item.repo}（不存在）`"
+            />
+            <vxe-option v-for="repo in repositories" :key="repo.name" :value="repo.name" :label="repo.name" />
+          </vxe-select>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="flex min-w-52 flex-1 overflow-hidden rounded-md border border-slate-300 bg-white">
+            <input v-model="item.path" class="min-w-0 flex-1 px-3 py-2 font-mono text-sm outline-none" placeholder="/path/to/directory" />
+            <button class="border-l border-slate-300 bg-slate-50 px-4 text-sm text-slate-600 hover:bg-slate-100" @click="openPathPicker(item, index)">
+              修改
+            </button>
+          </div>
+          <div class="inline-flex overflow-hidden rounded-md border border-blue-500">
+            <button
+              v-for="option in [{ value: 'write', label: '读写' }, { value: 'read', label: '只读' }, { value: 'none', label: '无权限' }]"
+              :key="option.value"
+              class="px-3 py-1.5 text-sm"
+              :class="item.permission === option.value ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-blue-50'"
+              @click="item.permission = option.value as Permission"
+            >
+              {{ option.label }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -338,11 +352,13 @@ onMounted(load);
       >
         + 添加路径
       </button>
-      <div class="flex justify-end gap-2 pt-2">
+    </div>
+    <template #footer>
+      <div class="flex justify-end gap-2">
         <button class="btn btn-secondary" @click="closePermissions">取消</button>
         <button class="btn btn-primary" :disabled="busy" @click="savePermissions">{{ busy ? "保存中…" : "保存" }}</button>
       </div>
-    </div>
+    </template>
   </BaseDialog>
 
   <PathPickerDialog
@@ -353,3 +369,31 @@ onMounted(load);
     @select="selectPath"
   />
 </template>
+
+<style scoped>
+.permission-repository-select :deep(.vxe-input) {
+  height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.375rem;
+  background: #fff;
+  box-shadow: none;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.permission-repository-select :deep(.vxe-input--inner) {
+  height: 40px;
+  padding: 0 0.75rem;
+  color: #172033;
+  font-size: 0.875rem;
+}
+
+.permission-repository-select :deep(.vxe-input--suffix) {
+  height: 40px;
+  background: transparent;
+}
+
+.permission-repository-select :deep(.vxe-input:focus-within) {
+  border-color: #2f6fed;
+  box-shadow: 0 0 0 3px rgb(47 111 237 / 12%);
+}
+</style>

@@ -190,12 +190,51 @@ button {
 }
 
 .modal-panel {
+  display: flex;
   width: min(34rem, calc(100vw - 3rem));
   max-height: calc(100vh - 7.75rem);
-  overflow: auto;
+  flex-direction: column;
+  overflow: hidden;
   border-radius: 0.75rem;
   background: #fff;
   box-shadow: 0 30px 80px rgb(15 23 42 / 28%);
+}
+
+.modal-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.5rem;
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #cbd5e1;
+  background-clip: padding-box;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 1rem 1.5rem;
 }
 
 .empty {
