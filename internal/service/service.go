@@ -4,7 +4,11 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"net"
+	"os"
+	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -122,6 +126,85 @@ func (s *Service) ListUsers() (dto.UsersResponse, error) {
 		Items: items, Revisions: state.Revisions,
 		Departments: append([]string(nil), state.Passwd.Departments...),
 	}, nil
+}
+
+func (s *Service) GetSvnserveInfo(ctx context.Context) dto.SvnserveInfo {
+	port := s.Config.SVN.SvnservePort
+	if port <= 0 {
+		port = 3690
+	}
+	executable := strings.TrimSpace(s.Config.SVN.SvnservePath)
+	if executable == "" {
+		executable = "svnserve"
+	}
+	info := dto.SvnserveInfo{
+		Executable: executable,
+		Port:       port,
+		RepoRoot:   s.Config.SVN.RepoRoot,
+		Passwd:     svnserveFileInfo(s.Config.SVN.PasswdFile),
+		Authz:      svnserveFileInfo(s.Config.SVN.AuthzFile),
+		CheckedAt:  time.Now().UTC().Format(time.RFC3339),
+	}
+	var issues []string
+
+	resolved, err := exec.LookPath(executable)
+	if err != nil {
+		issues = append(issues, "svnserve 可执行文件不可用: "+err.Error())
+	} else {
+		info.ResolvedPath = resolved
+		timeout := time.Duration(s.Config.SVN.CommandTimeoutSec) * time.Second
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		commandCtx, cancel := context.WithTimeout(ctx, timeout)
+		output, commandErr := exec.CommandContext(commandCtx, resolved, "--version").CombinedOutput()
+		cancel()
+		if commandErr != nil {
+			issues = append(issues, "svnserve --version 执行失败: "+commandErr.Error())
+		} else {
+			info.Available = true
+			info.VersionOutput = strings.TrimSpace(string(output))
+			for _, line := range strings.Split(info.VersionOutput, "\n") {
+				if line = strings.TrimSpace(line); line != "" {
+					info.Version = line
+					break
+				}
+			}
+		}
+	}
+
+	connection, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 1500*time.Millisecond)
+	if err == nil {
+		info.PortOpen = true
+		_ = connection.Close()
+	} else {
+		issues = append(issues, fmt.Sprintf("端口 %d 无法连接: %v", port, err))
+	}
+
+	repositories, err := s.Scanner.Discover(ctx)
+	if err != nil {
+		issues = append(issues, "仓库扫描失败: "+err.Error())
+		repositories = []svncfg.Repository{}
+	}
+	info.Repositories = repositories
+	for _, repository := range repositories {
+		info.TotalLatestRevision += repository.Revision
+	}
+	info.Error = strings.Join(issues, "\n")
+	return info
+}
+
+func svnserveFileInfo(path string) dto.SvnserveFileInfo {
+	info := dto.SvnserveFileInfo{Path: path}
+	stat, err := os.Stat(path)
+	if err != nil {
+		return info
+	}
+	info.Exists = true
+	info.Mode = fmt.Sprintf("%04o", stat.Mode().Perm())
+	info.Size = stat.Size()
+	info.ModifiedAt = stat.ModTime().UTC().Format(time.RFC3339)
+	return info
 }
 
 func (s *Service) CreateUser(revisions svncfg.Revisions, name, password, remark, department, clientIP string) (dto.OperationResult, error) {

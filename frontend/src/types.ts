@@ -30,6 +30,31 @@ export interface RawFilesResponse {
   revisions: Revisions;
 }
 
+export interface SvnserveFileInfo {
+  path: string;
+  exists: boolean;
+  mode?: string;
+  size?: number;
+  modifiedAt?: string;
+}
+
+export interface SvnserveInfo {
+  available: boolean;
+  executable: string;
+  resolvedPath?: string;
+  version?: string;
+  versionOutput?: string;
+  port: number;
+  portOpen: boolean;
+  repoRoot: string;
+  passwd: SvnserveFileInfo;
+  authz: SvnserveFileInfo;
+  repositories: Repository[];
+  totalLatestRevision: number;
+  checkedAt: string;
+  error?: string;
+}
+
 export interface Group {
   name: string;
   members: string[];

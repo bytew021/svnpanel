@@ -5,6 +5,7 @@ export interface MenuItem {
 }
 
 export const menuConfig: MenuItem[] = [
+  { name: "SVN 服务", path: "/svnserve", icon: "server" },
   { name: "SVN 用户", path: "/users", icon: "users" },
   { name: "SVN 分组", path: "/groups", icon: "group" },
   { name: "路径权限", path: "/permissions", icon: "lock" },

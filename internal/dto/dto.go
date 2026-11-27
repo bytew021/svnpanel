@@ -27,6 +27,31 @@ type RawFilesResponse struct {
 	Revisions svncfg.Revisions `json:"revisions"`
 }
 
+type SvnserveFileInfo struct {
+	Path       string `json:"path"`
+	Exists     bool   `json:"exists"`
+	Mode       string `json:"mode,omitempty"`
+	Size       int64  `json:"size,omitempty"`
+	ModifiedAt string `json:"modifiedAt,omitempty"`
+}
+
+type SvnserveInfo struct {
+	Available           bool                `json:"available"`
+	Executable          string              `json:"executable"`
+	ResolvedPath        string              `json:"resolvedPath,omitempty"`
+	Version             string              `json:"version,omitempty"`
+	VersionOutput       string              `json:"versionOutput,omitempty"`
+	Port                int                 `json:"port"`
+	PortOpen            bool                `json:"portOpen"`
+	RepoRoot            string              `json:"repoRoot"`
+	Passwd              SvnserveFileInfo    `json:"passwd"`
+	Authz               SvnserveFileInfo    `json:"authz"`
+	Repositories        []svncfg.Repository `json:"repositories"`
+	TotalLatestRevision int64               `json:"totalLatestRevision"`
+	CheckedAt           string              `json:"checkedAt"`
+	Error               string              `json:"error,omitempty"`
+}
+
 type Group struct {
 	Name        string                   `json:"name"`
 	Members     []string                 `json:"members"`

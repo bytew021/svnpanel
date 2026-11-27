@@ -21,8 +21,11 @@ func TestLoginRateLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := &cfg.Config{
-		Admin:   cfg.AdminConfig{Username: "admin", Password: "correct-password"},
-		SVN:     cfg.SVNConfig{RepoRoot: dir, PasswdFile: passwdPath, AuthzFile: authzPath, SvnlookPath: "svnlook"},
+		Admin: cfg.AdminConfig{Username: "admin", Password: "correct-password"},
+		SVN: cfg.SVNConfig{
+			RepoRoot: dir, PasswdFile: passwdPath, AuthzFile: authzPath,
+			SvnlookPath: "svnlook", SvnservePath: "svnserve", SvnservePort: 3690,
+		},
 		Audit:   cfg.AuditConfig{Dir: filepath.Join(dir, "audit")},
 		Backup:  cfg.BackupConfig{Dir: filepath.Join(dir, "backups"), Keep: 2},
 		Session: cfg.SessionConfig{IdleMinutes: 30, AbsoluteHours: 8},

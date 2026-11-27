@@ -37,6 +37,8 @@ type SVNConfig struct {
 	PasswdFile          string `toml:"PasswdFile"`
 	AuthzFile           string `toml:"AuthzFile"`
 	SvnlookPath         string `toml:"SvnlookPath"`
+	SvnservePath        string `toml:"SvnservePath"`
+	SvnservePort        int    `toml:"SvnservePort"`
 	CommandTimeoutSec   int    `toml:"CommandTimeoutSeconds"`
 	MaxCommandOutputMiB int64  `toml:"MaxCommandOutputMiB"`
 	MaxPathsPerLevel    int    `toml:"MaxPathsPerLevel"`

@@ -13,6 +13,7 @@ import type {
   RawFilesResponse,
   Revisions,
   Repository,
+  SvnserveInfo,
   UsersResponse,
 } from "@/types";
 
@@ -233,6 +234,11 @@ export async function deleteGroup(revisions: Revisions, name: string) {
 export async function listRepositories() {
   const { data } = await api.get<{ data: { items: Repository[] } }>("/repositories");
   return data.data.items;
+}
+
+export async function getSvnserveInfo() {
+  const { data } = await api.get<{ data: SvnserveInfo }>("/svnserve");
+  return data.data;
 }
 
 export async function listPaths(repo: string, parent: string) {

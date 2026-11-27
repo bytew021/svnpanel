@@ -51,7 +51,8 @@ func TestUserGroupACLFlow(t *testing.T) {
 		Admin:  cfg.AdminConfig{Username: "admin", Password: "admin-pass"},
 		SVN: cfg.SVNConfig{
 			RepoRoot: repoRoot, PasswdFile: passwdPath, AuthzFile: authzPath,
-			SvnlookPath: "svnlook", CommandTimeoutSec: 2, MaxCommandOutputMiB: 1, MaxPathsPerLevel: 100,
+			SvnlookPath: "svnlook", SvnservePath: "svnserve", SvnservePort: 3690,
+			CommandTimeoutSec: 2, MaxCommandOutputMiB: 1, MaxPathsPerLevel: 100,
 		},
 		Audit:   cfg.AuditConfig{Dir: filepath.Join(dir, "audit")},
 		Backup:  cfg.BackupConfig{Dir: filepath.Join(dir, "backups"), Keep: 50},
@@ -91,6 +92,23 @@ func TestUserGroupACLFlow(t *testing.T) {
 	}
 	decode(t, login, &loginData)
 	api.csrf = loginData.Data.CSRF
+
+	svnserveResponse := api.do(http.MethodGet, "/api/v1/svnserve", nil, true, false)
+	var svnserveInfo struct {
+		Data struct {
+			Executable string              `json:"executable"`
+			Port       int                 `json:"port"`
+			RepoRoot   string              `json:"repoRoot"`
+			Items      []svncfg.Repository `json:"repositories"`
+		} `json:"data"`
+	}
+	decode(t, svnserveResponse, &svnserveInfo)
+	if svnserveInfo.Data.Executable != "svnserve" || svnserveInfo.Data.Port != 3690 {
+		t.Fatalf("unexpected svnserve info: %+v", svnserveInfo.Data)
+	}
+	if svnserveInfo.Data.Items == nil {
+		t.Fatal("empty svnserve repository list must be encoded as []")
+	}
 
 	repositories := api.do(http.MethodGet, "/api/v1/repositories", nil, true, false)
 	var repositoryData struct {

@@ -30,6 +30,7 @@ func Config(r *gin.Engine, svc *service.Service) {
 	protected.POST("/auth/logout", requireCSRF(), logout(svc))
 
 	protected.GET("/repositories", listRepositories(svc))
+	protected.GET("/svnserve", getSvnserveInfo(svc))
 	protected.GET("/repositories/:repo/tree", listPaths(svc))
 	protected.GET("/repositories/:repo/acl", getACL(svc))
 	protected.POST("/repositories/:repo/acl", requireCSRF(), setACL(svc))

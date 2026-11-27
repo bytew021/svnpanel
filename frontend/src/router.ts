@@ -16,6 +16,7 @@ const router = createRouter({
       component: () => import("@/layout/MainLayout.vue"),
       children: [
         { path: "", redirect: "/users" },
+        { path: "svnserve", name: "svnserve", component: () => import("@/views/SvnserveView.vue") },
         { path: "users", name: "users", component: () => import("@/views/UserListView.vue") },
         { path: "groups", name: "groups", component: () => import("@/views/GroupListView.vue") },
         { path: "permissions", name: "permissions", component: () => import("@/views/PermissionView.vue") },

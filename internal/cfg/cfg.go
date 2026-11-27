@@ -105,6 +105,12 @@ func (c *Config) applyDefaults() {
 	if c.SVN.SvnlookPath == "" {
 		c.SVN.SvnlookPath = "svnlook"
 	}
+	if c.SVN.SvnservePath == "" {
+		c.SVN.SvnservePath = "svnserve"
+	}
+	if c.SVN.SvnservePort == 0 {
+		c.SVN.SvnservePort = 3690
+	}
 	if c.SVN.CommandTimeoutSec <= 0 {
 		c.SVN.CommandTimeoutSec = 5
 	}
@@ -147,6 +153,9 @@ func (c *Config) Validate() error {
 	}
 	if strings.TrimSpace(c.SVN.AuthzFile) == "" {
 		errs = append(errs, errors.New("SVN.AuthzFile 不能为空"))
+	}
+	if c.SVN.SvnservePort < 1 || c.SVN.SvnservePort > 65535 {
+		errs = append(errs, errors.New("SVN.SvnservePort 必须在 1-65535 范围内"))
 	}
 	if strings.TrimSpace(c.Audit.Dir) == "" {
 		errs = append(errs, errors.New("Audit.Dir 不能为空"))

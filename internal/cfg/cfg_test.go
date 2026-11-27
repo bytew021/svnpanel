@@ -38,6 +38,9 @@ Departments = ["legacy-department"]
 	if config.Backup.Keep != 50 || config.Session.IdleMinutes != 30 {
 		t.Fatalf("unexpected runtime defaults: %+v %+v", config.Backup, config.Session)
 	}
+	if config.SVN.SvnservePath != "svnserve" || config.SVN.SvnservePort != 3690 {
+		t.Fatalf("unexpected svnserve defaults: %+v", config.SVN)
+	}
 }
 
 func TestLoadAppliesLongestPathMap(t *testing.T) {
